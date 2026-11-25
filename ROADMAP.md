@@ -28,7 +28,8 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 - Foco de validação: preservar scanner Live, licenciamento, idempotência e
   gates; testes usam mocks. Regressão consolidada concluída localmente:
   **253 aprovados**, com o aviso conhecido Starlette/httpx. Os arquivos do
-  checkpoint foram revisados; artefatos locais e backups serão excluídos.
+  checkpoint foram revisados; artefatos locais e backups foram excluídos.
+  Checkpoint local: `a95e079`, sem push.
 
 - Foi implementada uma jornada comercial **somente simulada** na Landing Page
   nativa: busca sintética com candidatos ambíguos, confirmação explícita,

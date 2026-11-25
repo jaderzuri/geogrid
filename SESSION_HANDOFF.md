@@ -2,13 +2,13 @@
 
 Data: 2026-11-25
 
-## Sprint de lançamento — estado corrente da retomada
+## Sprint de lançamento — checkpoint local concluído
 
-- Branch `feature/dataforseo-standard-normal`; HEAD permanece `6aa2101`
-  (`docs: record P04 checkpoint status`). Worktree está dirty e contém o MVP
-  comercial simulado anterior mais as alterações de captura/admin/Express
-  gated; preservar tudo. Três backups `.bak` e `instalar_ida_adaptativo.py`
-  permanecem não rastreados e não devem entrar no checkpoint.
+- Branch `feature/dataforseo-standard-normal`; checkpoint local
+  `a95e079` (`feat: add gated Express and prospect capture`), baseado em
+  `6aa2101`. Nenhum push, merge ou deploy. O worktree está limpo para arquivos
+  rastreados; três backups `.bak` e `instalar_ida_adaptativo.py` permanecem
+  não rastreados, preservados e fora do checkpoint.
 - Implementada captura idempotente de concorrentes a partir dos pontos já
   armazenados em scans Express concluídos. Prospects se deduplicam por CID,
   Place ID, nome/endereço ou nome/localização; novas observações atualizam
@@ -33,13 +33,12 @@ Data: 2026-11-25
   nos quatro arquivos analisados e compatibilidade do call site
   `create_order` passaram. Os 249 testes do checkpoint anterior precedem estas
   alterações.
-- A revisão final e regressão estão concluídas. Este conjunto fica destinado
-  ao checkpoint local desta sprint; os backups `.bak` e
-  `instalar_ida_adaptativo.py` permanecem fora. Não fazer push, merge, deploy,
-  consulta paga ou alteração em produção. Depois do checkpoint, entregar o
-  relatório e aguardar autorização para teste real e publicação.
+- A revisão final e regressão estão concluídas. O checkpoint local contém
+  apenas código, testes e documentação revisados. Não houve consulta paga ou
+  alteração em produção. Próximo passo: entregar o relatório e aguardar
+  autorização para teste real e publicação.
 
-## Jornada comercial simulada — estado atual
+## Jornada comercial simulada — estado antes da sprint de captura
 
 - Branch `feature/dataforseo-standard-normal`; sem commit criado nesta etapa.
   As mudanças locais de código e documentação estão preservadas. Não houve

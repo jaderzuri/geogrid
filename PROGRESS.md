@@ -24,8 +24,8 @@
   compatibilidade do call site de `commercial_store.create_order`.
 - A revisão final confirmou somente código, testes e documentação comerciais
   no checkpoint; os backups `.bak` e `instalar_ida_adaptativo.py` ficam fora.
-  Checkpoint local será criado após essa seleção, sem push, merge ou deploy.
-  Nenhuma consulta paga ou alteração de produção ocorreu.
+  Checkpoint local criado como `a95e079`; sem push, merge ou deploy. Nenhuma
+  consulta paga ou alteração de produção ocorreu.
 
 ## Jornada comercial simulada — implementação concluída localmente
 
