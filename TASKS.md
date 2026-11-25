@@ -10,9 +10,15 @@
   regressão de 206 testes.
 - [x] Reiniciar o n8n com pendências e simuladores: 30 diagnósticos concluídos,
   30 POSTs simulados e 270 IDs distintos.
-- [ ] Aguardar autorização explícita antes de fazer commit e push do P01.
-- [ ] Após concluir o checkpoint, implementar exclusivamente o P02: classificação
-  sanitizada de falhas por etapa e testes com falhas induzidas.
+- [x] Publicar checkpoint P01 autorizado na branch de feature: `6fc53a1`.
+- [x] Implementar classificação sanitizada P02 e testar falhas no classificador
+  e no PostgreSQL isolado; repetir regressão P01 com migration 007.
+- [x] Testar no n8n isolado falhas de identidade, autenticação simulada e
+  caminho válido, sem chamadas pagas.
+- [x] Induzir falhas no claim e nos 17 cenários dos nós de processamento e
+  callbacks no n8n isolado, com simuladores e reservas verificadas.
+- [ ] Implementar e homologar P03: recuperação e retentativas seguras, sem
+  repetir submissões incertas.
 - [ ] Caso a resposta HTTP não tenha sido preservada antes da falha, reconciliar
   manualmente os IDs e custos incertos, sem reenviar `task_post`.
 

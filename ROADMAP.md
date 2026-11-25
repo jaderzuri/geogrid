@@ -86,10 +86,11 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 ### Próximas atividades autorizadas
 
 - **P01:** autorização única, reservas e custos foram validados com PostgreSQL
-  e n8n isolados; o checkpoint aguarda autorização para commit e push. O teste
-  PostgreSQL também foi repetido com a versão final da migration 006.
-- **P02:** classificar e observar falhas somente após autorização e conclusão
-  do checkpoint P01. Não iniciar P03, P04 ou Landing Page 2.0 nesta etapa.
+  e n8n isolados; checkpoint `6fc53a142cbe0cb0edceed83a097e96853d8f2da`
+  publicado na branch de feature. A migration 006 final foi testada.
+- **P02:** classificação e observabilidade implementadas localmente; testes
+  do classificador, PostgreSQL e falhas induzidas nos nós do n8n isolado
+  passaram. P03 é o próximo pacote autorizado; P04 e Landing Page 2.0 não.
 - Se a resposta HTTP não puder ser persistida nem recuperada, os IDs exigem
   reconciliação manual; manter a submissão incerta, sem reenvio automático.
   A garantia universal de chamada única entre banco e serviço externo não foi

@@ -1,0 +1,4 @@
+services:
+  mock-services:
+    environment:
+      MOCK_DATAFORSEO_PASSWORD: p02-simulated-auth-failure

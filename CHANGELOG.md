@@ -2,6 +2,17 @@
 
 Alterações relevantes do Smart Grid by ZURI.
 
+## Não lançado — P02
+
+- Classificação sanitizada por etapa no processador Standard, incluindo
+  categorias técnicas, identidade, orçamento e submissão incerta.
+- Registro de fase financeira e de resultados rejeitados por ponto, preservando
+  a reserva quando o resultado da submissão ou custo for incerto.
+- Testes do classificador, PostgreSQL e regressão P01 com migration 007 passaram.
+  n8n isolado cobriu falha de claim e 17 falhas induzidas nos nós do processador
+  e callbacks, além dos cenários de identidade, autenticação e sucesso.
+- Regressão Python: 206 aprovados e um aviso conhecido.
+
 ## Não lançado — checkpoint P01
 
 - Autorização única de `task_post` por claim válido e manutenção de reservas
@@ -16,7 +27,7 @@ Alterações relevantes do Smart Grid by ZURI.
 - Limitação: se a resposta HTTP não for persistida nem recuperada, é necessária
   reconciliação manual, sem repetir o POST. Não há garantia universal provada
   de chamada única em todas as falhas distribuídas.
-- Checkpoint aguarda autorização para commit e push; P02 ainda não iniciado.
+- Checkpoint autorizado e publicado como `6fc53a1`; P02 permanece local.
 
 ## Não lançado — homologação integrada
 

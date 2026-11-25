@@ -84,6 +84,11 @@ async function main() {
   await execFileAsync('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '-f', '/app/migration.sql'], {
     env: process.env, maxBuffer: 1024 * 1024
   });
+  if (process.env.P01_POST_MIGRATION) {
+    await execFileAsync('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '-f', process.env.P01_POST_MIGRATION], {
+      env: process.env, maxBuffer: 1024 * 1024
+    });
+  }
   const legacyState = await query(`SELECT status,budget_reservation_state,
     budget_reserved_scope_daily_key,budget_reserved_usd
     FROM geogrid_requests WHERE request_id='${legacyId}'`);

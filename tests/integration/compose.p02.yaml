@@ -1,0 +1,6 @@
+services:
+  test-runner:
+    volumes:
+      - ./test_p02_postgres.mjs:/app/test_p02_postgres.mjs:ro
+      - ../../workflows/n8n/sql/007-processor-error-observability.sql:/app/migration-p02.sql:ro
+    command: ["node", "/app/test_p02_postgres.mjs"]

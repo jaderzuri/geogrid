@@ -21,9 +21,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM geogrid_claim_next_request($1::text);",
+        "query": "SELECT * FROM geogrid_claim_processor_request($1::text);",
         "options": {
-          "queryReplacement": "={{ ['processor-' + $execution.id] }}"
+          "queryReplacement": "={{ [String($execution.id)] }}"
         }
       },
       "id": "8bcb478a-dfe1-48fd-9276-d83f2d5798d7",
@@ -36,19 +36,19 @@
           "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
           "name": "GeoGrid Queue PostgreSQL (configure after import)"
         }
-      },
-      "onError": "continueErrorOutput"
+      }
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const { URL } = require('url');\nconst r = $json;\nlet placeId = null;\nif (r.google_maps_url) {\n  const url = new URL(r.google_maps_url);\n  placeId = url.searchParams.get('query_place_id') || url.searchParams.get('place_id');\n  if (!placeId) {\n    const match = r.google_maps_url.match(/!1s(ChIJ[A-Za-z0-9_-]+)/);\n    if (match) placeId = match[1];\n  }\n}\nreturn { json: { ...r, place_id: placeId || null } };"
+        "jsCode": "const { URL } = require('url');\nconst r = $json;\nlet placeId = null;\nif (r.google_maps_url) {\n  let url;\n  try { url = new URL(r.google_maps_url); } catch { throw new Error('P02:INVALID_PLACE_ID'); }\n  placeId = url.searchParams.get('query_place_id') || url.searchParams.get('place_id');\n  if (!placeId) {\n    const match = r.google_maps_url.match(/!1s(ChIJ[A-Za-z0-9_-]+)/);\n    if (match) placeId = match[1];\n  }\n}\nreturn { json: { ...r, place_id: placeId || null } };"
       },
       "id": "e9c3df66-a9f0-477c-9d79-b7c6844197c7",
       "name": "Extract Exact Google Place ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [700, 320]
+      "position": [700, 320],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -83,23 +83,14 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT geogrid_release_prepaid_reservation($1::uuid,$2::uuid,'manual_review',$3::text) AS held;",
-        "options": {
-          "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, $('Extract Exact Google Place ID').item.json.claim_token, 'Business identity or location could not be verified; no DataForSEO task_post was sent'] }}"
-        }
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Atomically Claim One Request').item.json;\nconst origin = $prevNode.name;\nconst err = $json.error ?? $json;\nconst message = [typeof err === 'string' ? err : null, err?.message, err?.description, err?.code, err?.cause?.message, $json.message].filter(x => typeof x === 'string').join(' ');\nconst marker = ['Validate Resolved Business', 'Extract Exact Google Place ID'].includes(origin) ? message.match(/P02:(BUSINESS_NOT_FOUND|BUSINESS_AMBIGUOUS|INVALID_PLACE_ID|BUSINESS_IDENTITY_MISMATCH|BUSINESS_LOCATION_MISMATCH|CONNECTION_ERROR|TIMEOUT|RATE_LIMIT|AUTHENTICATION_ERROR|API_CONTRACT_ERROR|PERSISTENCE_ERROR|BUDGET_LIMIT|SUBMISSION_UNCERTAIN|PERMANENT_ERROR)(?::([0-9]{3,5}))?/) : null;\nconst rawCode = String(err?.httpCode ?? err?.statusCode ?? err?.code ?? '');\nconst knownCodes = new Set(['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);\nconst code = marker?.[2] ?? (/^[0-9]{3,5}$/.test(rawCode) || knownCodes.has(rawCode) ? rawCode : null);\nlet category;\nif (marker) category = marker[1];\nelse if (origin === 'Has Verifiable Place ID') category = 'BUSINESS_AMBIGUOUS';\nelse if (origin === 'Extract Exact Google Place ID') category = 'INVALID_PLACE_ID';\nelse if (code === '401' || code === '403') category = 'AUTHENTICATION_ERROR';\nelse if (code === '429') category = 'RATE_LIMIT';\nelse if (/ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out/i.test(message)) category = 'TIMEOUT';\nelse if (/ECONN|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(message)) category = 'CONNECTION_ERROR';\nelse if (origin === 'Validate Resolved Business' || origin === 'Build Nine Standard Tasks' || origin === 'Associate and Classify task_post Response') category = 'API_CONTRACT_ERROR';\nelse if (origin.includes('Persist') || origin.includes('Record Failed') || origin.includes('Authorize') || origin === 'Log Persisted Submission Outcomes') category = 'PERSISTENCE_ERROR';\nelse if (code && Number(code) >= 500) category = 'CONNECTION_ERROR';\nelse category = 'PERMANENT_ERROR';\nconst node = marker && origin === 'Validate Resolved Business' && ['BUSINESS_NOT_FOUND', 'INVALID_PLACE_ID', 'AUTHENTICATION_ERROR', 'RATE_LIMIT', 'CONNECTION_ERROR'].includes(category) ? 'Resolve Exact Place Details' : origin;\nreturn { json: { request_id: original.request_id, claim_token: original.claim_token, node, category, code, execution_id: String($execution.id) } };"
       },
       "id": "e55b85c2-70e8-407a-bf37-4f427c4b1f98",
-      "name": "Hold Unverified Business and Release Budget",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [1200, 500],
-      "credentials": {
-        "postgres": {
-          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
-          "name": "GeoGrid Queue PostgreSQL (configure after import)"
-        }
-      }
+      "name": "Classify Processor Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2760, 720]
     },
     {
       "parameters": {
@@ -141,7 +132,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const r = $('Extract Exact Google Place ID').item.json;\nconst p = $json;\nif (!p || !p.id || !p.location || !Number.isFinite(p.location.latitude) || !Number.isFinite(p.location.longitude)) throw new Error('Google Places did not return a verifiable location');\nconst name = p.displayName?.text || '';\nconst normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst requestedName = normalize(r.company_name);\nconst resolvedName = normalize(name);\nif (!requestedName || !resolvedName || !(resolvedName.includes(requestedName) || requestedName.includes(resolvedName))) throw new Error('Resolved Google Place name does not match the submitted company; manual review required');\nconst crypto = require('crypto');\nconst businessId = 'gplaces-' + crypto.createHash('sha256').update(p.id).digest('hex').slice(0, 40);\nreturn { json: { ...r, business_id: businessId, resolved_place_id: p.id, resolved_name: name, center_lat: p.location.latitude, center_lng: p.location.longitude, address: p.formattedAddress || `${r.city}, ${r.state}`, category: p.primaryTypeDisplayName?.text || null } };"
+        "jsCode": "const r = $('Extract Exact Google Place ID').item.json;\nconst p = $json.body ?? $json;\nconst providerCode = Number(p?.error?.code);\nif (Number.isInteger(providerCode)) {\n  const category = providerCode === 404 ? 'BUSINESS_NOT_FOUND' : [401, 403].includes(providerCode) ? 'AUTHENTICATION_ERROR' : providerCode === 429 ? 'RATE_LIMIT' : providerCode >= 500 ? 'CONNECTION_ERROR' : providerCode === 400 ? 'INVALID_PLACE_ID' : 'PERMANENT_ERROR';\n  throw new Error(`P02:${category}:${providerCode}`);\n}\nif (!p || !p.id || !p.location || !Number.isFinite(p.location.latitude) || !Number.isFinite(p.location.longitude)) throw new Error('P02:API_CONTRACT_ERROR');\nconst name = p.displayName?.text || '';\nconst normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst requestedName = normalize(r.company_name);\nconst resolvedName = normalize(name);\nif (!requestedName || !resolvedName || !(resolvedName.includes(requestedName) || requestedName.includes(resolvedName))) throw new Error('P02:BUSINESS_IDENTITY_MISMATCH');\nconst crypto = require('crypto');\nconst businessId = 'gplaces-' + crypto.createHash('sha256').update(p.id).digest('hex').slice(0, 40);\nreturn { json: { ...r, business_id: businessId, resolved_place_id: p.id, resolved_name: name, center_lat: p.location.latitude, center_lng: p.location.longitude, address: p.formattedAddress || `${r.city}, ${r.state}`, category: p.primaryTypeDisplayName?.text || null } };"
       },
       "id": "c0fd8818-8ee8-44a6-a0ea-48d0f98463d4",
       "name": "Validate Resolved Business",
@@ -321,7 +312,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const response = $json.body ?? $json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst expected = build.tasks;\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet mapped;\nif (code !== 20000 && !Array.isArray(response.tasks)) {\n  mapped = expected.map((t, i) => ({ row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\n} else {\n  const tasks = Array.isArray(response.tasks) ? response.tasks : [];\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = expected.map((input, i) => {\n    let t = byTag.get(input.tag);\n    if (!t && tasks.length === expected.length) {\n      t = tasks.find(candidate => candidate.data?.location_coordinate === input.location_coordinate);\n    }\n    if (!t) return { row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag/coordinate; manual reconciliation required' };\n    const taskCode = Number(t.status_code);\n    return { row: build.points[i].row, col: build.points[i].col, task_id: t.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: t.status_message || message, cost: t.cost == null ? null : Number(t.cost), error_category: categories[taskCode] || (t.id ? null : 'technical_error'), error_message: t.id ? null : (t.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst taskCostsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalCostKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nconst totalCost = totalCostKnown ? Number(response.cost) : (taskCostsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null);\nreturn { json: { request_id: build.request_id, claim_token: build.claim_token, task_results: mapped, total_cost_usd: totalCost } };"
+        "jsCode": "const response = $json.body ?? $json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst expected = build.tasks;\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet mapped;\nif (code !== 20000 && (!Array.isArray(response.tasks) || response.tasks.length === 0)) {\n  mapped = expected.map((t, i) => ({ row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\n} else {\n  const tasks = Array.isArray(response.tasks) ? response.tasks : [];\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = expected.map((input, i) => {\n    let t = byTag.get(input.tag);\n    if (!t && tasks.length === expected.length) {\n      t = tasks.find(candidate => candidate.data?.location_coordinate === input.location_coordinate);\n    }\n    if (!t) return { row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag/coordinate; manual reconciliation required' };\n    const taskCode = Number(t.status_code);\n    return { row: build.points[i].row, col: build.points[i].col, task_id: t.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: t.status_message || message, cost: t.cost == null ? null : Number(t.cost), error_category: categories[taskCode] || (t.id ? null : 'technical_error'), error_message: t.id ? null : (t.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst taskCostsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalCostKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nconst totalCost = totalCostKnown ? Number(response.cost) : (taskCostsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null);\nreturn { json: { request_id: build.request_id, claim_token: build.claim_token, task_results: mapped, total_cost_usd: totalCost } };"
       },
       "id": "46f1307a-bb84-4b24-8b2f-f9a9550b430a",
       "name": "Associate and Classify task_post Response",
@@ -354,13 +345,34 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT geogrid_mark_submission_uncertain($1::uuid,$2::uuid,$3::text) AS reconciliation_required;",
+        "query": "SELECT geogrid_log_post_outcomes($1::uuid,$2::uuid,$3::text) AS recorded;",
         "options": {
-          "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, $('Extract Exact Google Place ID').item.json.claim_token, 'task_post timed out, failed, or its response could not be durably associated; automatic resubmission is prohibited'] }}"
+          "queryReplacement": "={{ [$('Associate and Classify task_post Response').item.json.request_id, $('Associate and Classify task_post Response').item.json.claim_token, String($execution.id)] }}"
+        }
+      },
+      "id": "ef8c5729-cfe2-4319-8ed2-201ddab6dc98",
+      "name": "Log Persisted Submission Outcomes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [4040, 360],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_record_processor_error($1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text) AS recorded;",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id, $json.claim_token, $json.node, $json.category, $json.code, $json.execution_id] }}"
         }
       },
       "id": "58a1edb9-cfe3-4896-aeab-c22a26a5f14b",
-      "name": "Mark Paid Submission Uncertain",
+      "name": "Record Processor Failure",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [3800, 520],
@@ -380,7 +392,8 @@
         "name": "Build Failed Submission Point Callbacks",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [3540, 240]
+        "position": [3540, 240],
+        "onError": "continueErrorOutput"
     },
     {
         "parameters": {
@@ -470,28 +483,9 @@
             "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
             "name": "GeoGrid Queue PostgreSQL (configure after import)"
           }
-        }
-    },
-    {
-        "parameters": {
-          "operation": "executeQuery",
-          "query": "SELECT geogrid_release_prepaid_reservation($1::uuid,$2::uuid,'queued',$3::text) AS requeued;",
-          "options": {
-            "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, $('Extract Exact Google Place ID').item.json.claim_token, 'Pre-submission integration step failed; no DataForSEO task_post was sent'] }}"
-          }
         },
-        "id": "898d6bb3-c2f5-4e51-9d06-12ea898b0519",
-        "name": "Requeue Safe Pre-Submission Error",
-        "type": "n8n-nodes-base.postgres",
-        "typeVersion": 2.6,
-        "position": [2760, 520],
-        "credentials": {
-          "postgres": {
-            "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
-            "name": "GeoGrid Queue PostgreSQL (configure after import)"
-          }
-        }
-      }
+        "onError": "continueErrorOutput"
+    }
   ],
   "connections": {
     "Run Every Minute": {
@@ -524,6 +518,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -538,7 +539,7 @@
         ],
         [
           {
-            "node": "Hold Unverified Business and Release Budget",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -556,7 +557,7 @@
         ],
         [
           {
-            "node": "Hold Unverified Business and Release Budget",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -574,7 +575,7 @@
         ],
         [
           {
-            "node": "Hold Unverified Business and Release Budget",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -592,7 +593,7 @@
         ],
         [
           {
-            "node": "Hold Unverified Business and Release Budget",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -610,7 +611,7 @@
         ],
         [
           {
-            "node": "Requeue Safe Pre-Submission Error",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -628,7 +629,7 @@
         ],
         [
           {
-            "node": "Hold Unverified Business and Release Budget",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -646,7 +647,7 @@
         ],
         [
           {
-            "node": "Requeue Safe Pre-Submission Error",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -664,7 +665,7 @@
         ],
         [
           {
-            "node": "Requeue Safe Pre-Submission Error",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -682,7 +683,7 @@
         ],
         [
           {
-            "node": "Mark Paid Submission Uncertain",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -700,7 +701,7 @@
         ],
         [
           {
-            "node": "Mark Paid Submission Uncertain",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -711,6 +712,24 @@
       "main": [
         [
           {
+            "node": "Log Persisted Submission Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Persisted Submission Outcomes": {
+      "main": [
+        [
+          {
             "node": "Build Failed Submission Point Callbacks",
             "type": "main",
             "index": 0
@@ -718,7 +737,7 @@
         ],
         [
           {
-            "node": "Mark Paid Submission Uncertain",
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -730,6 +749,13 @@
         [
           {
             "node": "Any Failed Submission Points?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Processor Failure",
             "type": "main",
             "index": 0
           }
@@ -753,6 +779,36 @@
         [
           {
             "node": "Record Failed Point Callback Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Failed Point Callback Delivery": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Processor Failure": {
+      "main": [
+        [
+          {
+            "node": "Record Processor Failure",
             "type": "main",
             "index": 0
           }

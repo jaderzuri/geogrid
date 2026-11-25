@@ -2,9 +2,56 @@
 
 Data: 2026-11-25
 
+## Retomada P02 — validação concluída; checkpoint em preparação
+
+- Checkpoint P01 `6fc53a142cbe0cb0edceed83a097e96853d8f2da` foi commitado e
+  enviado à branch autorizada; o remoto foi confirmado com o mesmo hash.
+- P02 permanece local, sem commit. A migration 007 e o workflow
+  02 registram falhas classificadas em `geogrid_execution_logs`, com mensagens
+  fixas sanitizadas e fase anterior/posterior à autorização. As transições
+  financeiras continuam usando as funções P01.
+- Validação final: 24 falhas induzidas no classificador; PostgreSQL isolado
+  cobriu 10 falhas pré-submissão, reserva incerta, resultados e orçamento.
+  Os testes P01 passaram com 007 instalada. Regressão: 206 aprovados, um aviso.
+- n8n 1.123.21 com simuladores: identidade ambígua e divergente
+  foram classificadas, e uma solicitação válida teve nove IDs e um POST simulado.
+  Em rodada anterior, autenticação simulada inválida gerou nove classificações
+  `AUTHENTICATION_ERROR`, com reserva `held_unknown_cost` e uma autorização.
+  Rodada adicional `geogrid-p02-faults-v5-20261125` passou falha de claim e
+  17 falhas induzidas nos nós de processamento e callbacks, com seis POSTs
+  simulados previstos, sem repetição durante a observação. O workflow importado
+  era cópia instrumentada exclusivamente em homologação; funções e caminhos
+  de erro reais foram exercitados. Volumes v1–v5 foram preservados.
+- Se o PostgreSQL estiver indisponível, não poderá registrar sua própria falha;
+  a execução de claim falha visivelmente e requer monitoramento externo. A
+  validação de localização propriamente dita pertence ao P04 e não foi feita.
+- Evidências preservadas, inclusive volumes
+  `geogrid-p02-20261125-final-p01-postgres-state`,
+  `geogrid-p02-20261125-final-p02-postgres-state` e os quatro volumes com
+  prefixo `geogrid-p02-20261125-final-n8n`. Serviços P02 foram parados;
+  o PostgreSQL da homologação anterior permanece intocado.
+- Próximo passo: revisão de arquivos e checkpoint local P02 autorizado; após
+  concluído, implementar P03. P04 e Landing Page 2.0 não foram autorizados.
+  Push não foi autorizado.
+
+Para repetir os testes, escolher nomes de volume inexistentes e exclusivos:
+
+```bash
+node tests/integration/test_p02_classifier.mjs
+P01_VOLUME_NAME=<volume-novo-p02> docker compose -p <projeto-novo-p02> -f tests/integration/compose.p01.yaml -f tests/integration/compose.p02.yaml run --rm test-runner
+P01_VOLUME_NAME=<volume-novo-p01> docker compose -p <projeto-novo-p01> -f tests/integration/compose.p01.yaml -f tests/integration/compose.p02-p01.yaml run --rm test-runner
+P02_VOLUME_PREFIX=<prefixo-novo-n8n> docker compose -p <projeto-novo-n8n> -f tests/integration/compose.yaml -f tests/integration/compose.p02-processor.yaml run --rm test-runner node /app/test_p02_n8n.mjs
+.venv/bin/python -m pytest -q
+```
+
+Substituir os marcadores, verificar previamente conflitos de portas e preservar
+os volumes. Para a rodada de falhas, acrescentar o arquivo
+`tests/integration/compose.p02-faults.yaml`, construir o simulador e executar
+`node /app/test_p02_n8n_faults.mjs` no runner.
+
 ## Estado atual — desbloqueio P01
 
-Este bloco substitui as informações de Git e serviços da rodada anterior abaixo.
+Este bloco registra o estado anterior ao checkpoint P01.
 Branch `feature/dataforseo-standard-normal`, HEAD `38adc28`; há alterações
 locais não commitadas nem staged. O checkpoint P01 aguarda autorização para
 commit e push; P02 só deve começar após sua conclusão. P02 e os pacotes

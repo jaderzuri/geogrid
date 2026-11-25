@@ -2,10 +2,27 @@
 
 Última atualização: 2026-11-25.
 
-## Checkpoint P01 — aguardando autorização
+## P02 — estado atual
 
-- Branch `feature/dataforseo-standard-normal`, HEAD `38adc28`. O checkpoint
-  proposto ainda não foi staged nem commitado.
+- P01 foi commitado e enviado sob autorização: `6fc53a142cbe0cb0edceed83a097e96853d8f2da`.
+  As alterações P02 permanecem locais e sem commit.
+- Migration 007 e workflow 02 registram categorias e metadados sanitizados,
+  distinguem a fase financeira e preservam as proteções do P01. Erros de claim
+  interrompem a execução quando não é possível registrá-los no PostgreSQL.
+- Classificador: 24 falhas induzidas. PostgreSQL isolado: 10 falhas anteriores
+  à submissão, submissão incerta, resultados por ponto e orçamento; regressão
+  P01 com 007 aplicada também passou. Suíte Python: 206 aprovados, um aviso.
+- n8n com simuladores: identidade ambígua, divergência e caminho válido; nove
+  erros de autenticação DataForSEO simulada mantiveram a reserva. Rodada
+  isolada adicional injetou falha de claim e 17 cenários nos nós de processamento
+  e callbacks; reserva prévia foi liberada e submissões incertas mantidas. Foram
+  seis POSTs simulados esperados, sem repetição durante o período observado.
+- Volumes de evidência preservados. Os percentuais históricos abaixo não
+  incorporam novos critérios P02 e não representam prontidão de produção.
+
+## Checkpoint P01 — registro anterior
+
+- Registro histórico anterior ao checkpoint `6fc53a1`.
 - Migration 006: testes repetidos em PostgreSQL isolado com o arquivo final,
   hash SHA-256 `44b2b67135073c49aac9323ecc3e9c1d623c7e5133e230d7ad990edd6478098d`
   antes e depois. Passaram autorização única, concorrência, reservas legadas e
@@ -19,7 +36,7 @@
   única em toda falha distribuída; esses resultados não autorizam produção.
 - O volume isolado `geogrid-p01-20261125-checkpoint-postgres-state` foi
   preservado e seu PostgreSQL parado. Os volumes anteriores não foram alterados.
-- Próximo passo: aguardar autorização do checkpoint; só então iniciar P02.
+- O checkpoint P01 foi posteriormente autorizado e publicado.
 
 ## Estado resumido
 
@@ -31,8 +48,8 @@
   depreciação do `httpx` usado pelo `TestClient`.
 - O checkpoint anterior registrava 204 testes aprovados; foram adicionados
   dois testes focados para timeout/configuração, e a suíte atual tem 206.
-- Nenhum commit, push, merge, deploy, chamada DataForSEO real ou alteração de
-  produção foi realizado.
+- Nesta etapa P02 não houve novo commit, push, merge, deploy, chamada
+  DataForSEO real ou alteração de produção.
 
 Os percentuais e os critérios estão detalhados em `ROADMAP.md`. São estimativas
 de marcos; não medem cobertura de código nem garantem prontidão para produção.

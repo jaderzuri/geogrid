@@ -86,6 +86,14 @@ editor antes de ativar; não instale community nodes para esta integração.
    - `workflows/n8n/sql/001-schema.sql`
    - `workflows/n8n/sql/002-functions.sql`
    - `workflows/n8n/sql/003-landing-crm-capability.sql`
+   - `workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql`
+   - `workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql`
+   - `workflows/n8n/sql/007-processor-error-observability.sql`
+
+O arquivo 005 de `tests/integration` configura orçamento somente para
+homologação e não é uma migração de produção. Antes de atualizar uma fila
+existente, pare os processadores, valide backup e reconcilie reservas legadas;
+não aplique migrações em produção sem autorização.
 
 O serviço GeoGrid existente não precisa de alteração ou acesso a esse banco.
 Mantenha `GEOGRID_DB` apontando para o SQLite atual do GeoGrid.
@@ -124,6 +132,14 @@ Os logs não devem receber dados pessoais, cabeçalhos `Authorization`, tokens,
 senhas ou respostas completas de provedores. Os dados de contato são mantidos
 em `geogrid_requests` para a integração futura autorizada; aplique a política
 de retenção/expurgo aprovada pela organização antes de usar dados reais.
+Os eventos `processor_error` registram nó, etapa, categoria, código seguro,
+mensagem fixa, tentativa, execução, possibilidade de recuperação e fase da
+autorização; data e request ID ficam nas colunas da tabela. Submissão incerta
+exige intervenção e nunca autoriza novo POST. Se o PostgreSQL estiver
+indisponível, ele não consegue persistir o próprio erro: a execução deve falhar
+visivelmente e o monitoramento externo deve alertar, sem gravar payloads.
+A classificação não introduz validação de identidade/localização do P04 nem
+altera a política de retentativas; defina retenção e acesso restrito aos logs.
 
 ## 3. Configurar limites antes de qualquer ativação
 
@@ -612,6 +628,18 @@ docker exec -i geogrid-pg-homolog \
   psql -v ON_ERROR_STOP=1 -U postgres -d geogrid_queue \
   < workflows/n8n/sql/003-landing-crm-capability.sql
 
+docker exec -i geogrid-pg-homolog \
+  psql -v ON_ERROR_STOP=1 -U postgres -d geogrid_queue \
+  < workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql
+
+docker exec -i geogrid-pg-homolog \
+  psql -v ON_ERROR_STOP=1 -U postgres -d geogrid_queue \
+  < workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql
+
+docker exec -i geogrid-pg-homolog \
+  psql -v ON_ERROR_STOP=1 -U postgres -d geogrid_queue \
+  < workflows/n8n/sql/007-processor-error-observability.sql
+
 # n8n isolado 1.123.21
 docker run -d --name geogrid-n8n-homolog \
   -p 127.0.0.1:5678:5678 \
@@ -656,9 +684,8 @@ submissões incertas, erros de callback, espaço em disco e tamanho dos logs.
 1. Preservar e registrar o SQLite atual e todos os backups.
 2. Criar um banco PostgreSQL novo em `geogrid_queue`; não apontar para banco
    interno do n8n nem para o SQLite.
-3. Aplicar `001-schema.sql`, `002-functions.sql` e
-   `003-landing-crm-capability.sql` em homologação; executar em produção somente
-   após aprovação.
+3. Aplicar as migrations 001–004, 006 e 007 em ordem em homologação; executar
+   em produção somente após aprovação, backup validado e parada dos workers.
 4. Criar usuário PostgreSQL exclusivo com apenas os privilégios necessários.
 5. Configurar credenciais reais no secret manager/n8n; não importar secrets nos
    JSON nem configurar dados no navegador.

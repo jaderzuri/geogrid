@@ -89,6 +89,9 @@ for (const name of fs.readdirSync(source).filter(name => /^0[1-6]-.*\.json$/.tes
           : ids.smartgrid;
     }
   }
+  if (process.env.P02_INJECT_FAULTS === '1' && name.startsWith('02-')) {
+    require('/bootstrap/p02-faults-bootstrap.cjs')(workflow);
+  }
   fs.writeFileSync(path.join(destination, name), JSON.stringify(workflow));
 }
 NODE

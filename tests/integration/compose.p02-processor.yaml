@@ -1,0 +1,18 @@
+services:
+  smart-grid:
+    image: geogrid-homolog-20261125-verified2-smart-grid:latest
+  mock-services:
+    image: geogrid-homolog-20261125-verified2-mock-services:latest
+  test-runner:
+    image: geogrid-homolog-20261125-verified2-test-runner:latest
+    volumes:
+      - ./test_p02_n8n.mjs:/app/test_p02_n8n.mjs:ro
+volumes:
+  postgres-state:
+    name: ${P02_VOLUME_PREFIX:-geogrid-p02-20261125-processor}-postgres-state
+  smart-grid-state:
+    name: ${P02_VOLUME_PREFIX:-geogrid-p02-20261125-processor}-smart-grid-state
+  n8n-state:
+    name: ${P02_VOLUME_PREFIX:-geogrid-p02-20261125-processor}-n8n-state
+  mock-certs:
+    name: ${P02_VOLUME_PREFIX:-geogrid-p02-20261125-processor}-mock-certs

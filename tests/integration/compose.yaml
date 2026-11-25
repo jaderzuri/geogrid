@@ -12,6 +12,7 @@ services:
       - ../../workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql:/docker-entrypoint-initdb.d/004-capability-lifecycle-and-crm-dispatch.sql:ro
       - ./005-homologation-budget.sql:/docker-entrypoint-initdb.d/005-homologation-budget.sql:ro
       - ../../workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql:/docker-entrypoint-initdb.d/006-paid-submission-authorization-and-budget.sql:ro
+      - ../../workflows/n8n/sql/007-processor-error-observability.sql:/docker-entrypoint-initdb.d/007-processor-error-observability.sql:ro
       - postgres-state:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U geogrid_homolog -d geogrid_queue"]

@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,6 +45,14 @@ class MockHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == "/__mock__/failure/timeout":
+            time.sleep(2)
+            self.close_connection = True
+            return
+        if path.startswith("/__mock__/failure/"):
+            code = int(path.rsplit("/", 1)[-1])
+            _json_response(self, code, {"error": {"code": code, "status": "SYNTHETIC_FAILURE"}})
+            return
         if path == "/__mock__/metrics":
             with _lock:
                 counts = dict(_counts)
@@ -66,7 +75,11 @@ class MockHandler(BaseHTTPRequestHandler):
             _json_response(self, 400, {"error": "invalid_json"})
             return
 
-        if path == "/v3/serp/google/maps/task_post":
+        if path == "/__mock__/post-rejected":
+            with _lock:
+                _counts["task_post"] += 1
+            _json_response(self, 200, {"status_code": 40100, "status_message": "Synthetic rejection", "tasks": []})
+        elif path == "/v3/serp/google/maps/task_post":
             self._task_post(body)
         elif path.startswith("/v3/serp/google/maps/task_get/advanced/"):
             self._task_get(unquote(path.rsplit("/", 1)[-1]))
