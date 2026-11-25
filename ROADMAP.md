@@ -85,12 +85,18 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 
 ### Próximas atividades autorizadas
 
-Não iniciar novas funcionalidades. Antes de qualquer publicação, revisar a
-causa ainda não isolada dos 34 `manual_review`, reconciliar manualmente os 22
-`submission_uncertain` sem reenvio automático, validar sizing no Easypanel e
-obter contratos oficiais da integração T2S. Cada etapa operacional exige
-aprovação explícita; Smart Leads Intelligence continua não iniciado e não
-autorizado.
+- **P01:** autorização única, reservas e custos foram validados com PostgreSQL
+  e n8n isolados; o checkpoint aguarda autorização para commit e push. O teste
+  PostgreSQL também foi repetido com a versão final da migration 006.
+- **P02:** classificar e observar falhas somente após autorização e conclusão
+  do checkpoint P01. Não iniciar P03, P04 ou Landing Page 2.0 nesta etapa.
+- Se a resposta HTTP não puder ser persistida nem recuperada, os IDs exigem
+  reconciliação manual; manter a submissão incerta, sem reenvio automático.
+  A garantia universal de chamada única entre banco e serviço externo não foi
+  comprovada em todas as falhas.
+- Antes de publicar, revisar os 34 `manual_review`, reconciliar os 22 casos
+  anteriores `submission_uncertain`, validar sizing no Easypanel e obter os
+  contratos oficiais T2S. Smart Leads Intelligence segue não autorizado.
 
 ### Planejamento futuro — Smart Leads Intelligence
 

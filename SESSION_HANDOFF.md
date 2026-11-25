@@ -2,6 +2,99 @@
 
 Data: 2026-11-25
 
+## Estado atual — desbloqueio P01
+
+Este bloco substitui as informações de Git e serviços da rodada anterior abaixo.
+Branch `feature/dataforseo-standard-normal`, HEAD `38adc28`; há alterações
+locais não commitadas nem staged. O checkpoint P01 aguarda autorização para
+commit e push; P02 só deve começar após sua conclusão. P02 e os pacotes
+seguintes não foram iniciados nesta rodada. Não aplicar a migração em produção
+nem publicar sem autorização.
+
+### Correções e limites
+
+- `workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql` mantém
+  reservas legadas sem origem diária comprovada em `legacy_unreconciled`, sem
+  deduzir a data do claim. `geogrid_reconcile_legacy_reservation` exige escopo
+  e referência de evidência informados por operador; essa evidência deve provar
+  a origem e, antes de liberar, que não houve submissão paga. Referências não
+  devem conter dados pessoais. Restringir o acesso às funções SQL privilegiadas.
+- Reservas novas registram a data UTC original. Claims pré-submissão expirados
+  liberam os dois escopos uma só vez; submissões incertas mantêm a reserva e
+  não autorizam novo `task_post`.
+- IDs recebidos são persistidos mesmo com custo desconhecido; zero conhecido é
+  distinto de custo desconhecido. `geogrid_reconcile_post_cost` contabiliza o
+  custo e libera a reserva mediante evidência, de forma idempotente. Dados
+  conflitantes são rejeitados. Uma resposta tardia pode ser associada pelo
+  token original da autorização, sem novo POST.
+- Limitação: a resposta do HTTP ainda não tem armazenamento durável separado
+  antes da gravação dos IDs. Se o processo cair antes da persistência e a
+  resposta não tiver sido preservada, não há recuperação automática dos IDs;
+  manter `submission_uncertain` e fazer reconciliação manual, sem reenviar.
+  Também não se comprovou garantia universal de exatamente uma chamada na
+  fronteira entre banco e serviço externo em todas as falhas possíveis.
+- Funções e migração foram testadas em dados sintéticos; o procedimento para
+  reconciliar reservas antigas reais exige evidências independentes e revisão
+  operacional antes de qualquer uso. A aplicação da migração exige processadores
+  parados e backup validado; não foi aplicada a bancos anteriores.
+
+### Evidências P01
+
+- Teste SQL final: PostgreSQL 16 em
+  `geogrid-p01-20261125-unlock-v5-postgres-state`. Passaram 20 claims
+  concorrentes distintos, uma autorização entre 20 tentativas concorrentes,
+  bloqueio de claim expirado e token divergente, recuperação após virada UTC,
+  reservas legadas pré e pós-submissão, reconciliação financeira concorrente,
+  custo zero e desconhecido, IDs tardios e reaplicação da migração. A primeira
+  tentativa falhou por ambiguidade no teste; foi corrigida sem alterar volumes.
+- Na preparação do checkpoint, o teste PostgreSQL foi repetido com a migration
+  final; SHA-256 antes e depois:
+  `44b2b67135073c49aac9323ecc3e9c1d623c7e5133e230d7ad990edd6478098d`.
+  O volume novo `geogrid-p01-20261125-checkpoint-postgres-state` foi preservado
+  e seu contêiner parado. A regressão foi repetida: `206 passed`, um aviso.
+- Reinício real do n8n 1.123.21 em stack isolada com simuladores: 5 pedidos
+  iniciais e 25 adicionais aceitos. Ao parar o n8n havia 18 `queued`, 3 `claimed`,
+  1 `scan_created`, 3 `submitted` e 5 `done`. Os quatro claims pré-submissão
+  foram expirados artificialmente com o n8n parado; após o reinício, a
+  recuperação liberou suas reservas. Os leases de polling expiraram naturalmente.
+  Resultado: 30 `done`, 30 `task_post` simulados, 270 IDs e tags distintos,
+  30 autorizações, custo e reservas pendentes de US$ 0 no simulador.
+  Essa rodada antecedeu apenas a validação adicional de precisão decimal do SQL;
+  a versão final passou no teste PostgreSQL v5.
+- Regressão: `206 passed`, um aviso conhecido de depreciação do `httpx`.
+  Sem chamadas pagas reais, credenciais reais, commit, push ou deploy.
+- Foram parados apenas os serviços criados para P01. Volumes `unlock`,
+  `unlock-v2`, `unlock-v3`, `unlock-v4`, `unlock-v5` e os quatro volumes
+  `geogrid-p01-20261125-processor-*` foram preservados. O PostgreSQL anterior
+  `geogrid-homolog-20261125-verified2-postgres-1` permaneceu ativo e intacto.
+
+### Arquivos locais do P01
+
+- Modificados: `ROADMAP.md`, `TASKS.md`, `PROGRESS.md`, `CHANGELOG.md`,
+  `workflows/n8n/02-processador-standard.json`,
+  `tests/integration/compose.yaml`, `tests/integration/Dockerfile.test-runner`
+  e `SESSION_HANDOFF.md`.
+- Novos: `workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql`,
+  `tests/integration/compose.p01.yaml`,
+  `tests/integration/compose.p01-processor.yaml`,
+  `tests/integration/test_p01_postgres.mjs` e
+  `tests/integration/test_p01_restart_submit.mjs`.
+- Backups preexistentes e `instalar_ida_adaptativo.py` seguem fora do escopo.
+
+Para repetir o teste PostgreSQL, escolher **outro nome de volume inexistente**:
+
+```sh
+P01_VOLUME_NAME=geogrid-p01-NOVO-postgres-state docker compose \
+  -p geogrid-p01-NOVO -f tests/integration/compose.p01.yaml \
+  run --rm test-runner
+P01_VOLUME_NAME=geogrid-p01-NOVO-postgres-state docker compose \
+  -p geogrid-p01-NOVO -f tests/integration/compose.p01.yaml stop
+```
+
+O teste exige banco vazio e a imagem local `integration-test-runner:latest`.
+Não remover volumes. Aguardar autorização do commit/push; após concluir o
+checkpoint, implementar somente P02, preservando as proteções P01.
+
 ## Não fazer na retomada sem confirmação
 
 Não iniciar Smart Leads Intelligence nem novas funcionalidades. A homologação
@@ -10,7 +103,7 @@ investigar os casos de revisão manual, reconciliar submissões incertas e revis
 o sizing. Não fazer commit, push, merge, deploy, chamadas pagas ou operações de
 produção sem autorização.
 
-## Estado Git
+## Estado Git da rodada anterior
 
 - Branch atual: `feature/dataforseo-standard-normal`.
 - HEAD continua no checkpoint `0c22286f72ae04a84195a3e2634ef73c3f0776b3`;
@@ -51,7 +144,7 @@ produção sem autorização.
   20 `manual_review`, 7 `submission_uncertain` e respostas `502`.
 - Métricas e limitações completas estão em `docs/n8n-setup.md` e `PROGRESS.md`.
 
-## Homologação preservada
+## Homologação preservada — registro anterior
 
 Todos os containers de homologação estão parados. Volumes históricos e das
 novas rodadas foram preservados; nenhum volume foi removido:
@@ -117,7 +210,7 @@ evita alterar os volumes de evidência existentes. Nunca usar `down -v`.
 Em qualquer retry, preservar o mesmo `request_id`; não interpretar persistência
 sem resposta HTTP `202` como confirmação ao usuário.
 
-## Inventário do worktree nesta retomada
+## Inventário do worktree da rodada anterior
 
 Modificados:
 

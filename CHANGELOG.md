@@ -1,7 +1,22 @@
 # Changelog
 
-Alterações relevantes do Smart Grid by ZURI. As entradas abaixo descrevem o
-worktree preparado para homologação; ainda não foram publicadas em commit.
+Alterações relevantes do Smart Grid by ZURI.
+
+## Não lançado — checkpoint P01
+
+- Autorização única de `task_post` por claim válido e manutenção de reservas
+  incertas, sem reenvio automático.
+- Reservas legadas sem data comprovada ficam retidas para reconciliação;
+  reservas novas mantêm o escopo diário original, inclusive após virada UTC.
+- IDs com custo desconhecido são preservados; custo zero é distinto de
+  desconhecido e a reconciliação financeira é idempotente.
+- Migration final 006 validada em PostgreSQL isolado; regressão de 206 testes
+  aprovada. Reinício n8n com simuladores: 30 concluídos, 30 POSTs simulados e
+  270 IDs distintos.
+- Limitação: se a resposta HTTP não for persistida nem recuperada, é necessária
+  reconciliação manual, sem repetir o POST. Não há garantia universal provada
+  de chamada única em todas as falhas distribuídas.
+- Checkpoint aguarda autorização para commit e push; P02 ainda não iniciado.
 
 ## Não lançado — homologação integrada
 

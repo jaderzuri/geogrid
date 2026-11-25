@@ -2,6 +2,25 @@
 
 Última atualização: 2026-11-25.
 
+## Checkpoint P01 — aguardando autorização
+
+- Branch `feature/dataforseo-standard-normal`, HEAD `38adc28`. O checkpoint
+  proposto ainda não foi staged nem commitado.
+- Migration 006: testes repetidos em PostgreSQL isolado com o arquivo final,
+  hash SHA-256 `44b2b67135073c49aac9323ecc3e9c1d623c7e5133e230d7ad990edd6478098d`
+  antes e depois. Passaram autorização única, concorrência, reservas legadas e
+  novas, virada UTC, custos desconhecidos, IDs tardios e reconciliação.
+- Reinício n8n anterior com simuladores: 30 `done`, 30 POSTs simulados, 270
+  IDs únicos e nenhuma reserva remanescente. A rodada precedeu apenas a
+  validação extra de precisão decimal; a migration final passou no PostgreSQL.
+- Regressão repetida: 206 aprovados, um aviso conhecido de depreciação.
+- Se uma resposta HTTP não puder ser persistida nem recuperada, os IDs e custos
+  exigem reconciliação manual, sem novo `task_post`. Não se comprovou chamada
+  única em toda falha distribuída; esses resultados não autorizam produção.
+- O volume isolado `geogrid-p01-20261125-checkpoint-postgres-state` foi
+  preservado e seu PostgreSQL parado. Os volumes anteriores não foram alterados.
+- Próximo passo: aguardar autorização do checkpoint; só então iniciar P02.
+
 ## Estado resumido
 
 - Branch: `feature/dataforseo-standard-normal`.
@@ -74,7 +93,7 @@ riscos operacionais explícitos.
   Serve como evidência local, não como sizing do Easypanel. A rede era interna,
   com simuladores externos.
 
-## Segurança e preservação
+## Segurança e preservação — rodada anterior
 
 - As stacks Compose estão paradas; volumes de todas as rodadas foram
   preservados, sem `down -v` ou remoção.
@@ -88,7 +107,7 @@ riscos operacionais explícitos.
 - `geogrid.db` está ignorado pelo Git e não foi alterado. Backups `.bak`
   permanecem no worktree e não fazem parte do checkpoint proposto.
 
-## Inventário atual do worktree
+## Inventário do worktree da rodada anterior
 
 Modificados nesta retomada: `app/landing.py`, `docs/n8n-setup.md`,
 `tests/integration/compose.yaml`, `tests/integration/run_homologation.mjs`,

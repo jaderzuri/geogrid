@@ -1,5 +1,21 @@
 # Smart Grid by ZURI — Próximas tarefas
 
+## Checkpoint P01 e P02
+
+- [x] Validar autorização única e reservas em PostgreSQL isolado, incluindo
+  concorrência, claims expirados, virada UTC e reconciliação legada.
+- [x] Validar IDs com custo desconhecido, custo zero, resposta tardia e
+  reconciliação idempotente sem novo POST.
+- [x] Repetir os testes PostgreSQL com a versão final da migration 006 e a
+  regressão de 206 testes.
+- [x] Reiniciar o n8n com pendências e simuladores: 30 diagnósticos concluídos,
+  30 POSTs simulados e 270 IDs distintos.
+- [ ] Aguardar autorização explícita antes de fazer commit e push do P01.
+- [ ] Após concluir o checkpoint, implementar exclusivamente o P02: classificação
+  sanitizada de falhas por etapa e testes com falhas induzidas.
+- [ ] Caso a resposta HTTP não tenha sido preservada antes da falha, reconciliar
+  manualmente os IDs e custos incertos, sem reenviar `task_post`.
+
 ## Homologação integrada — executada em 2026-11-25
 
 - [x] Confirmar causa dos `HTTP 502`: timeout fixo de 8 s, menor que a
