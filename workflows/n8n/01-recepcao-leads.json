@@ -1,0 +1,249 @@
+{
+  "name": "ZURI Smart Grid | 01 - Recepção de Leads",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "zuri-smart-grid/leads",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a87c1420-7cab-4e79-98d9-f72bcbce9eb1",
+      "name": "Landing Page Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [240, 300],
+      "webhookId": "zuri-smart-grid-leads"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const crypto = require('crypto');\nconst { URL } = require('url');\nconst input = $json.body ?? $json;\nconst limits = { request_id: 36, status_token: 64, contact_name: 200, company_name: 200, email: 254, whatsapp: 32, city: 120, state: 80, google_maps_url: 2000, keyword: 200, campaign_id: 128, privacy_policy_version: 100 };\nfor (const key of ['request_id','status_token','contact_name','company_name','email','whatsapp','city','state','keyword','campaign_id','privacy_policy_version']) {\n  if (typeof input[key] !== 'string' || !input[key].trim() || input[key].trim().length > limits[key]) throw new Error(`Missing, invalid, or oversized field: ${key}`);\n}\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.request_id)) throw new Error('Invalid request ID');\nif (!/^[a-f0-9]{64}$/.test(input.status_token)) throw new Error('Invalid status capability');\nif (input.privacy_acknowledged !== true || typeof input.marketing_consent !== 'boolean') throw new Error('Privacy acknowledgement and explicit marketing choice are required');\nif (input.website && String(input.website).trim()) return { json: { is_bot: true, request_id: input.request_id, status_token: input.status_token } };\nconst email = input.email.trim().toLowerCase();\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('Invalid email');\nconst whatsapp = input.whatsapp.replace(/[^+\\d]/g, '');\nif (whatsapp.length < 8 || whatsapp.length > 20) throw new Error('Invalid WhatsApp number');\nlet mapsUrl = null;\nif (typeof input.google_maps_url === 'string' && input.google_maps_url.trim()) {\n  const parsed = new URL(input.google_maps_url.trim());\n  const host = parsed.hostname.toLowerCase();\n  if (parsed.protocol !== 'https:' || !(host === 'google.com' || host.endsWith('.google.com') || host === 'maps.app.goo.gl' || host === 'goo.gl')) throw new Error('google_maps_url must be an HTTPS Google Maps URL');\n  mapsUrl = parsed.toString();\n}\nif (input.contact_name.trim().length < 2 || input.company_name.trim().length < 2 || input.city.trim().length < 2 || input.keyword.trim().length < 2) throw new Error('Name, city and keyword fields are too short');\nconst clean = { request_id: input.request_id, status_token: input.status_token, status_token_hash: crypto.createHash('sha256').update(input.status_token).digest('hex'), contact_name: input.contact_name.trim(), company_name: input.company_name.trim(), email, whatsapp, city: input.city.trim(), state: input.state.trim().toUpperCase(), google_maps_url: mapsUrl, keyword: input.keyword.trim(), campaign_id: input.campaign_id.trim(), privacy_acknowledged: true, privacy_policy_version: input.privacy_policy_version.trim(), marketing_consent: input.marketing_consent, consent_at: new Date().toISOString(), is_bot: false };\nconst fingerprintFields = { ...clean };\ndelete fingerprintFields.status_token;\ndelete fingerprintFields.status_token_hash;\ndelete fingerprintFields.consent_at;\ndelete fingerprintFields.is_bot;\nconst canonical = JSON.stringify(fingerprintFields);\nconst idempotencyKey = crypto.createHash('sha256').update(`${clean.campaign_id}\\n${email}`).digest('hex');\nconst fingerprint = crypto.createHash('sha256').update(canonical).digest('hex');\nreturn { json: { ...clean, idempotency_key: idempotencyKey, payload_fingerprint: fingerprint } };"
+      },
+      "id": "388e94a9-4ad9-4ed0-b458-fb618fa13b3a",
+      "name": "Validate and Normalize Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "honeypot-filled",
+              "leftValue": "={{ $json.is_bot }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "16250d67-a6c1-4f66-9c4a-4b3496645001",
+      "name": "Discard Honeypot Submission",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, request_id: $('Validate and Normalize Lead').item.json.request_id, status: 'queued', duplicate: false, status_token: $('Validate and Normalize Lead').item.json.status_token } }}",
+        "options": {
+          "responseCode": 202,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "70ba6a2b-6eaa-4ca7-b04c-6194e83f5002",
+      "name": "Quiet Honeypot Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 140]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_enqueue_landing_request($1::uuid,$2::text,$3::text,$4::text,$5::text,$6::text,$7::text,$8::text,$9::text,$10::text,$11::text,$12::text,$13::text,$14::timestamptz,$15::text,$16::boolean);",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id, $json.status_token_hash, $json.idempotency_key, $json.payload_fingerprint, $json.campaign_id, $json.contact_name, $json.company_name, $json.email, $json.whatsapp, $json.city, $json.state, $json.google_maps_url, $json.keyword, $json.consent_at, $json.privacy_policy_version, $json.marketing_consent] }}"
+        }
+      },
+      "id": "982e7307-11cb-4d42-a840-ea8452447f95",
+      "name": "Persist Idempotently in PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [740, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, request_id: $json.saved_request_id, status: $json.saved_status, duplicate: $json.duplicate, status_token: $('Validate and Normalize Lead').item.json.status_token } }}",
+        "options": {
+          "responseCode": 202,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "a3b941ee-523c-4cce-b9fc-44416a62161f",
+      "name": "Respond HTTP 202",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: false, error: 'Invalid request' } }}",
+        "options": {
+          "responseCode": 422,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "6022f8d7-6c8c-4cf6-8ca0-6466b3f15c7f",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [740, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: false, error: 'Queue storage unavailable; retry with the same submission' } }}",
+        "options": {
+          "responseCode": 503,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b05c01b5-df74-40c4-8ed4-808d6356d9c6",
+      "name": "Respond Queue Unavailable",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 500]
+    }
+  ],
+  "connections": {
+    "Landing Page Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Discard Honeypot Submission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discard Honeypot Submission": {
+      "main": [
+        [
+          {
+            "node": "Quiet Honeypot Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Persist Idempotently in PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Idempotently in PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Respond HTTP 202",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Queue Unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "57d20e73-8df0-44d1-84ba-f6c122fadf8c",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

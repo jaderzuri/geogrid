@@ -16,6 +16,7 @@ def _page_content() -> str:
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
     leaflet_stub = """
       <script>
+        window.testMarkers = [];
         window.L = {
           map: () => ({setView() { return this; }}),
           control: {zoom: () => ({addTo() {}})},
@@ -23,13 +24,18 @@ def _page_content() -> str:
             window.tileLayerConfig = {url, options};
             return {addTo() {}};
           },
-          marker: () => ({
-            addTo() { return this; },
-            bindPopup() { return this; },
-            bindTooltip() { return this; },
-            on() { return this; },
-            remove() {},
-          }),
+          marker: (latlng, options) => {
+            const marker = {
+              latlng, options,
+              addTo() { return this; },
+              bindPopup(callback) { this.popupCallback = callback; return this; },
+              bindTooltip() { return this; },
+              on() { return this; },
+              remove() {},
+            };
+            window.testMarkers.push(marker);
+            return marker;
+          },
           divIcon: (options) => options,
           point: (point) => point,
           layerGroup: () => ({addTo() { return this; }, clearLayers() {}}),
@@ -111,6 +117,125 @@ def test_help_panel_explains_indicators_views_and_unavailable_data(help_page):
         assert detail in text
     assert "Experimental" in text
     assert "Protótipo não validado" in text
+
+
+def test_scan_view_explains_coverage_and_distinguishes_point_outcomes(help_page):
+    help_page.route(
+        "http://smart-grid.test/api/scans/9",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body="""{
+              "id": 9, "status": "done", "keyword": "serviço local",
+              "business_name": "Empresa", "business_cid": "target",
+              "business_place_id": null, "created": "2025-01-01T00:00:00Z",
+              "grid_size": 3, "spacing_km": 1, "center_lat": -23.5, "center_lng": -46.6,
+              "progress": 4, "total": 9, "metrics": {},
+              "comparison": null, "competitors": [],
+              "points": [
+                {"row": 0, "col": 0, "lat": -23.5, "lng": -46.6,
+                 "rank": null, "status": "ok", "results": [{"name": "Concorrente", "cid": "other"}]},
+                {"row": 0, "col": 1, "lat": -23.5, "lng": -46.5,
+                 "rank": null, "status": "no_results", "error_category": "no_results",
+                 "api_status_code": 40102, "api_status_message": "No Search Results", "results": []},
+                {"row": 0, "col": 2, "lat": -23.5, "lng": -46.4,
+                 "rank": null, "status": "error", "error_category": "insufficient_balance",
+                 "api_status_code": 40200, "api_status_message": "Payment required",
+                 "error": "DataForSEO 40200: Payment required", "results": []},
+                {"row": 1, "col": 0, "lat": -23.4, "lng": -46.6,
+                 "rank": null, "status": "pending", "error_category": "task_pending",
+                 "api_status_code": 20100, "api_status_message": "Task created", "results": []}
+              ]
+            }""",
+        ),
+    )
+    help_page.route(
+        "**/api/scans/9/analysis**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"metrics": {}, "ida_average": null, "ida_evaluated_points": 0, "ida_coverage_pct": 0, "ice": {"counts": {}}, "icm": {}, "icpb_v2": {}, "iop": {}, "points": []}',
+        ),
+    )
+
+    help_page.evaluate("openScan(9)")
+
+    coverage = help_page.locator("#coverageInfo")
+    expect(coverage).to_contain_text("1/9 pontos válidos (11.1%)")
+    expect(coverage).to_contain_text("sem resultados: 1")
+    expect(coverage).to_contain_text("falhos: 1")
+    expect(coverage).to_contain_text("pendentes: 6")
+    expect(coverage).to_contain_text("não representa probabilidade")
+    marker_html = help_page.evaluate(
+        "window.testMarkers.map((marker) => marker.options.icon?.html).filter(Boolean)"
+    )
+    assert any('class="pin r4"' in item and ">20+</div>" in item for item in marker_html)
+    assert any('class="pin no-results"' in item and ">Ø</div>" in item for item in marker_html)
+    assert any('class="pin rx"' in item and ">!</div>" in item for item in marker_html)
+    assert any('class="pin pending"' in item and ">…</div>" in item for item in marker_html)
+    popup_texts = help_page.evaluate(
+        """window.testMarkers
+          .filter((marker) => marker.popupCallback)
+          .map((marker) => marker.popupCallback())"""
+    )
+    assert any("não é contado como posição 20+" in popup for popup in popup_texts)
+    assert any("consulta válida; empresa fora do ranking" in popup for popup in popup_texts)
+    assert any("Saldo insuficiente" in popup and "40200" in popup for popup in popup_texts)
+
+
+def test_partial_scan_keeps_point_states_visible_in_pdf_print_view(help_page):
+    help_page.route(
+        "http://smart-grid.test/api/scans/22",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body="""{
+              "id": 22, "status": "partial", "finished": "2026-01-01T00:00:00Z",
+              "keyword": "serviço local", "business_name": "Empresa",
+              "business_cid": "target", "business_place_id": null,
+              "created": "2026-01-01T00:00:00Z", "grid_size": 3, "spacing_km": 1,
+              "center_lat": -23.5, "center_lng": -46.6, "progress": 3, "total": 9,
+              "metrics": {"arp": 1, "atrp": 1, "solv": 100, "found_pct": 100},
+              "comparison": null, "competitors": [],
+              "points": [
+                {"row": 0, "col": 0, "lat": -23.5, "lng": -46.6,
+                 "rank": 1, "status": "ok", "results": [{"name": "Empresa", "cid": "target"}]},
+                {"row": 0, "col": 1, "lat": -23.5, "lng": -46.5,
+                 "rank": null, "status": "no_results", "results": []},
+                {"row": 0, "col": 2, "lat": -23.5, "lng": -46.4,
+                 "rank": null, "status": "error", "error": "Provider error", "results": []},
+                {"row": 1, "col": 0, "lat": -23.4, "lng": -46.6,
+                 "rank": null, "status": "pending", "results": []}
+              ]
+            }""",
+        ),
+    )
+    help_page.route(
+        "**/api/scans/22/analysis**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"metrics": {}, "ida_average": null, "ida_evaluated_points": 0, "ida_coverage_pct": 0, "ice": {"counts": {}}, "icm": {}, "icpb_v2": {}, "iop": {}, "points": []}',
+        ),
+    )
+
+    help_page.evaluate("window.print = () => { window.__printCalls = (window.__printCalls || 0) + 1; }")
+    help_page.evaluate("openScan(22)")
+
+    assert help_page.locator("#deltaBtn").is_disabled()
+    expect(help_page.locator("#coverageInfo")).to_contain_text("Execução encerrada parcialmente")
+    marker_html = help_page.evaluate(
+        "window.testMarkers.map((marker) => marker.options.icon?.html).filter(Boolean)"
+    )
+    assert any('class="pin no-results"' in item for item in marker_html)
+    assert any('class="pin rx"' in item for item in marker_html)
+    assert any('class="pin pending"' in item for item in marker_html)
+
+    help_page.locator("#printBtn").click()
+    assert help_page.evaluate("window.__printCalls") >= 1
+    help_page.emulate_media(media="print")
+    assert help_page.locator("#side").evaluate("(el) => getComputedStyle(el).display") == "none"
+    assert help_page.locator("#scanCard").evaluate("(el) => getComputedStyle(el).display") != "none"
 
 
 def test_help_panel_fits_and_scrolls_on_mobile(help_page):

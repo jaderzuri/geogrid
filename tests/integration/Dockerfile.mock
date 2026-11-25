@@ -1,0 +1,7 @@
+FROM python:3.12-alpine
+
+RUN apk add --no-cache openssl
+WORKDIR /mock
+COPY mock_services.py .
+EXPOSE 443 8081
+CMD ["sh", "-c", "mkdir -p /certs && openssl req -x509 -newkey rsa:2048 -nodes -days 365 -keyout /certs/mock-key.pem -out /certs/mock-cert.pem -subj '/CN=api.dataforseo.com' -addext 'subjectAltName=DNS:api.dataforseo.com,DNS:places.googleapis.com' >/dev/null 2>&1 && chmod 644 /certs/mock-cert.pem && python /mock/mock_services.py"]

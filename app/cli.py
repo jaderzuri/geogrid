@@ -37,6 +37,12 @@ def print_summary(scan: dict) -> None:
         print_grid(scan)
     m = scan.get("metrics")
     if m:
+        print(
+            f"  coverage {m['valid_points']}/{m['requested_points']} "
+            f"({m['coverage_pct']}%, {m['coverage_level']})  "
+            f"no results {m['no_results_points']}  failed {m['failed_points']}  "
+            f"pending {m['pending_points']}"
+        )
         print(f"  ARP {m['arp']}  ATRP {m['atrp']}  SoLV {m['solv']}%  found {m['found_pct']}%  errors {m['errors']}")
     for i, comp in enumerate((scan.get("competitors") or [])[:5], 1):
         print(f"  #{i} {comp['name']}  SoLV {comp['solv']}%  ATRP {comp['atrp']}")
@@ -68,7 +74,7 @@ async def cmd_scan(args) -> int:
             await run_scan(scan_id, fetcher, args.concurrency)
             scan = db.get_scan(scan_id)
             print_summary(scan)
-            if scan["status"] != "done":
+            if scan["status"] != "done" or scan["metrics"]["valid_points"] == 0:
                 exit_code = 1
         return exit_code
     finally:

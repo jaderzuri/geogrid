@@ -327,17 +327,38 @@ function renderHistoryList() {
   if (!S.scans.length) { ul.innerHTML = '<li class="muted small">No scans yet.</li>'; return; }
   ul.innerHTML = S.scans.map((s) => {
     const m = s.metrics || {};
-    const badge = s.status === "done"
-      ? indicatorEnabled("solv") ? `SoLV ${fmt(m.solv, "%")}` : "done"
-      : s.status === "running" ? `${s.progress}/${s.total}` : "failed";
+    const validPoints = m.valid_points ?? m.points ?? 0;
+    const coverage = m.coverage_pct ?? (s.total ? Math.round((1000 * validPoints) / s.total) / 10 : 0);
+    const hasIncompletePoints = (m.no_results_points || 0) > 0
+      || (m.failed_points || 0) > 0
+      || (m.pending_points || 0) > 0
+      || coverage < 100;
+    const active = scanIsActive(s);
+    const badge = active
+      ? s.status === "running" ? `${s.progress}/${s.total}`
+        : s.status === "queued" ? "na fila"
+          : s.status === "partial" ? `parcial ${s.progress}/${s.total}`
+            : `processando ${s.progress}/${s.total}`
+      : s.status === "failed"
+        ? "failed"
+        : hasIncompletePoints
+          ? coverage === 0 ? "sem medição" : `incompleta ${coverage}%`
+          : indicatorEnabled("solv") ? `SoLV ${fmt(m.solv, "%")}` : "done";
     return `<li class="item ${S.scan && S.scan.id === s.id ? "active" : ""}" data-id="${s.id}">
       <span class="kw">${esc(s.keyword)}</span><span class="badge ${s.status}">${badge}</span>
-      <span class="meta">${when(s.created)} · ${gridLabel(s)}${s.status === "done" && indicatorEnabled("arp") ? ` · ARP ${fmt(m.arp)}` : ""}</span></li>`;
+      <span class="meta">${when(s.created)} · ${gridLabel(s)} · ${validPoints}/${s.total} válidos (${fmt(coverage, "%")})${["done", "partial"].includes(s.status) && s.finished && indicatorEnabled("arp") ? ` · ARP ${fmt(m.arp)}` : ""}</span></li>`;
   }).join("");
 }
 $("#history").addEventListener("click", (e) => { const li = e.target.closest("li.item"); if (li) openScan(+li.dataset.id); });
 
 // ---------- scan view ----------
+function scanIsActive(scan) {
+  return ["running", "queued", "processing"].includes(scan.status)
+    || (scan.status === "partial" && !scan.finished);
+}
+function scanHasFinalAnalysis(scan) {
+  return ["done", "partial"].includes(scan.status) && !scanIsActive(scan);
+}
 async function openScan(id, { keepView = false } = {}) {
   const scan = await api(`/api/scans/${id}`);
   const switched = !S.scan || S.scan.id !== id;
@@ -345,10 +366,10 @@ async function openScan(id, { keepView = false } = {}) {
   if (switched) { S.analysis = null; S.analysisScanId = null; }
   if (switched && !keepView) { S.competitor = null; S.mode = "rank"; }
   renderScan(switched);
-  if (scan.status === "done" && (switched || !S.analysis)) loadZuriAnalysis(id);
+  if (scanHasFinalAnalysis(scan) && (switched || !S.analysis)) loadZuriAnalysis(id);
   document.querySelectorAll("#history li.item").forEach((li) => li.classList.toggle("active", +li.dataset.id === id));
   stopPolling();
-  if (scan.status === "running") S.pollTimer = setTimeout(async () => { await loadHistory(); openScan(id, { keepView: true }); }, 2500);
+  if (scanIsActive(scan)) S.pollTimer = setTimeout(async () => { await loadHistory(); openScan(id, { keepView: true }); }, 2500);
   else if (!switched) loadHistory();
 }
 function stopPolling() { clearTimeout(S.pollTimer); S.pollTimer = null; }
@@ -366,26 +387,40 @@ function renderScan(fit) {
   $("#scanSub").textContent = `${s.business_name} · ${when(s.created)} · ${gridLabel(s)}`;
 
   const prog = $("#progress");
-  if (s.status === "running") {
+  if (scanIsActive(s)) {
     prog.classList.remove("hidden");
     prog.querySelector("div").style.width = `${(100 * s.progress) / s.total}%`;
-    prog.querySelector("span").textContent = s.progress ? `Scanning ${s.progress} / ${s.total} points…` : "Queued / starting…";
+    prog.querySelector("span").textContent = s.status === "queued" || !s.progress
+      ? "Queued / starting…"
+      : `${s.status === "partial" ? "Partial results" : "Processing"} ${s.progress} / ${s.total} points…`;
   } else prog.classList.add("hidden");
 
+  renderCoverage();
   renderMetrics();
   const info = $("#analysisInfo");
   if (S.analysis) {
     const ice = S.analysis.ice?.counts || {};
     const analysisDetails = [
+      `Base de ARP/ATRP/SoLV/Found/IVL: ${coverageSummary(s).valid}/${coverageSummary(s).requested} pontos válidos`,
       indicatorEnabled("ida")
-        ? `IDA: ${S.analysis.ida_evaluated_points ?? 0} pontos · ${fmt(S.analysis.ida_coverage_pct, "%")} cobertura`
+        ? `IDA: ${S.analysis.ida_evaluated_points ?? 0}/${coverageSummary(s).valid} pontos válidos avaliados · ${fmt(S.analysis.ida_coverage_pct, "%")} cobertura`
+        : null,
+      indicatorEnabled("icpb_v2")
+        ? `ICP-B: ${S.analysis.icpb_v2?.valid_points ?? 0}/${S.analysis.icpb_v2?.total_points ?? coverageSummary(s).requested} pontos válidos`
+        : null,
+      indicatorEnabled("icm")
+        ? `ICM: ${S.analysis.icm?.observed_occurrences ?? 0} observações da empresa`
+        : null,
+      `ICE: ${S.analysis.ice?.valid_points ?? 0}/${S.analysis.ice?.total_points ?? coverageSummary(s).requested} pontos válidos`,
+      indicatorEnabled("iop") && S.analysis.iop?.point_coverage_pct !== undefined
+        ? `IOP: ${S.analysis.iop.point_coverage_pct}% da grade`
         : null,
       `ICE: ${ice.direct ?? 0} diretos, ${ice.indirect ?? 0} indiretos, ${ice.keyword_only ?? 0} por palavra-chave, ${ice.indeterminate ?? 0} indeterminados`,
       indicatorEnabled("iop") ? "IOP: protótipo experimental não validado" : null,
     ].filter(Boolean);
     info.textContent = analysisDetails.join(" · ");
   } else {
-    info.textContent = s.status === "done" && hasEnabledAnalysisIndicator()
+    info.textContent = scanHasFinalAnalysis(s) && hasEnabledAnalysisIndicator()
       ? "Carregando análise de indicadores…"
       : "";
   }
@@ -408,6 +443,52 @@ function renderScan(fit) {
   updateIndicatorVisibility();
   drawScanGrid();
   if (fit) fitGrid();
+}
+
+function coverageSummary(scan) {
+  const points = scan.points || [];
+  const requested = Number(scan.total ?? scan.grid_size * scan.grid_size);
+  const counts = { valid: 0, noResults: 0, failed: 0, pending: 0 };
+  for (const point of points) {
+    if (point.status === "ok") counts.valid += 1;
+    else if (point.status === "no_results") counts.noResults += 1;
+    else if (point.status === "pending") counts.pending += 1;
+    else counts.failed += 1;
+  }
+  counts.pending += Math.max(0, requested - points.length);
+  const coverage = requested ? Math.round((1000 * counts.valid) / requested) / 10 : 0;
+  const level = counts.valid === 0
+    ? "sem medição válida"
+    : coverage >= 100
+      ? "completa"
+      : coverage >= 80
+        ? "alta cobertura"
+        : coverage >= 50
+          ? "cobertura moderada"
+          : "cobertura insuficiente";
+  return { requested, ...counts, coverage, level };
+}
+
+function renderCoverage() {
+  const summary = coverageSummary(S.scan);
+  const execution = scanIsActive(S.scan)
+    ? "Em execução"
+    : S.scan.status === "failed"
+      ? "Execução falhou"
+      : S.scan.status === "partial"
+        ? "Execução encerrada parcialmente"
+      : summary.failed > 0
+        ? "Execução encerrada com falhas"
+        : summary.pending > 0
+          ? "Execução encerrada; há pontos aguardando processamento"
+          : summary.noResults > 0
+            ? "Execução encerrada; há pesquisas sem resultados"
+            : "Execução encerrada";
+  $("#coverageInfo").innerHTML =
+    `<strong>${execution}</strong> · Cobertura ${summary.level}: ${summary.valid}/${summary.requested} pontos válidos (${summary.coverage}%). ` +
+    `Solicitados: ${summary.requested} · válidos: ${summary.valid} · sem resultados: ${summary.noResults} · ` +
+    `falhos: ${summary.failed} · pendentes: ${summary.pending}. ` +
+    `<span class="muted">Classificação operacional, não representa probabilidade ou confiança estatística.</span>`;
 }
 
 function renderMetrics() {
@@ -434,10 +515,12 @@ function renderMetrics() {
     ["icpb_v2", "ICP-B V2", S.competitor ? "–" : fmt(S.analysis?.icpb_v2?.score), "Pressão competitiva descritiva; não é probabilidade", ""],
     ["iop", "IOP", S.competitor ? "–" : fmt(S.analysis?.iop?.score), "Protótipo não validado; não é probabilidade nem previsão de vendas", ""],
   ];
+  const sample = coverageSummary(s);
+  const rankingBasis = `Base: ${sample.valid} de ${sample.requested} pontos válidos.`;
   $("#metrics").innerHTML = metrics
     .filter(([id]) => indicatorEnabled(id))
     .map(([id, label, value, title, change]) =>
-      `<div class="metric" data-indicator-card="${id}" title="${title}"><div class="l">${label}</div><div class="v">${value}</div>${change}</div>`,
+      `<div class="metric" data-indicator-card="${id}" title="${esc(title)}${["arp", "atrp", "solv", "found"].includes(id) ? ` ${rankingBasis}` : ""}"><div class="l">${label}</div><div class="v">${value}</div>${change}</div>`,
     ).join("");
 }
 
@@ -475,7 +558,8 @@ function drawScanGrid() {
     const row = Math.floor(idx / s.grid_size), col = idx % s.grid_size;
     const p = byCell.get(`${row},${col}`);
     let cls, label, iconStyle = "";
-    if (!p) { cls = "pending"; label = "…"; }
+    if (!p || p.status === "pending") { cls = "pending"; label = "…"; }
+    else if (p.status === "no_results") { cls = "no-results"; label = "Ø"; }
     else if (p.status !== "ok") { cls = "rx"; label = "!"; }
     else {
       const rank = S.competitor ? rankIn(p.results, key) : p.rank;
@@ -503,13 +587,37 @@ function drawScanGrid() {
       } else { cls = rankClass(rank); label = rank ?? "20+"; }
     }
     const m = L.marker([lat, lng], { icon: L.divIcon({ className: "", html: `<div class="pin ${cls}" style="${iconStyle}">${label}</div>`, iconSize: [34, 34] }) });
-    if (p) m.bindPopup(() => popupHtml(p, key), { maxWidth: 320, autoPanPaddingTopLeft: L.point(pad.topLeft), autoPanPaddingBottomRight: L.point(pad.bottomRight) });
+    m.bindPopup(() => popupHtml(p, key), { maxWidth: 320, autoPanPaddingTopLeft: L.point(pad.topLeft), autoPanPaddingBottomRight: L.point(pad.bottomRight) });
     m.addTo(gridLayer);
   });
 }
 
 function popupHtml(p, key) {
-  if (p.status !== "ok") return `<div class="popup"><h4>Point not scanned</h4><div class="muted">${esc(p.error)}</div></div>`;
+  if (!p || p.status === "pending") return `<div class="popup"><h4>Aguardando processamento</h4><div class="muted">Este ponto ainda não tem um resultado final.</div></div>`;
+  const providerDetail = p.api_status_code == null
+    ? ""
+    : `<div class="muted">DataForSEO ${esc(p.api_status_code)}: ${esc(p.api_status_message || "")}</div>`;
+  if (p.status === "no_results") {
+    return `<div class="popup"><h4>Sem resultados de pesquisa (Ø)</h4><div class="muted">A consulta não retornou resultados orgânicos; este ponto não é contado como posição 20+.</div>${providerDetail}</div>`;
+  }
+  if (p.status !== "ok") {
+    const labels = {
+      authentication_error: "Falha de autenticação",
+      access_denied: "Acesso negado (conta ou IP)",
+      insufficient_balance: "Saldo insuficiente",
+      rate_limit: "Limite de requisições",
+      duplicate_task_limit: "Limite de tarefas duplicadas",
+      budget_limit: "Limite de orçamento",
+      request_notice: "Aviso da API",
+      partial_results: "Resultado parcial",
+      task_pending: "Tarefa aguardando processamento",
+      task_unavailable: "Tarefa indisponível",
+      request_error: "Erro nos parâmetros da consulta",
+      technical_error: "Erro técnico",
+    };
+    const label = labels[p.error_category] || "Falha na consulta";
+    return `<div class="popup"><h4>${esc(label)} (!)</h4><div class="muted">${esc(p.error || "A consulta não foi concluída.")}</div>${providerDetail}</div>`;
+  }
   const rank = rankIn(p.results, key) ?? (S.competitor ? null : p.rank);
   const a = S.analysis?.points?.find((x) => x.row === p.row && x.col === p.col);
   const ida = a?.difficulty?.ida;
@@ -521,7 +629,8 @@ function popupHtml(p, key) {
     ? ""
     : `<div>IOP experimental: ${opportunity.score} / 100</div>`;
   const items = p.results.map((r) => `<li class="${sameBiz(r, key) ? "hit" : ""}">${esc(r.name)}${r.rating ? ` <span class="muted">★${r.rating}</span>` : ""}</li>`).join("");
-  return `<div class="popup"><h4>${esc(key.name)}: ${rank ? "#" + rank : "not in top 20"}</h4>
+  const rankText = rank == null ? "20+ (consulta válida; empresa fora do ranking)" : `#${rank}`;
+  return `<div class="popup"><h4>${esc(key.name)}: ${rankText}</h4>
     <div class="muted">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>${difficultyText ? `<div>${difficultyText}</div>` : ""}${opportunityText}<ol>${items || "<li class='muted'>No results</li>"}</ol></div>`;
 }
 

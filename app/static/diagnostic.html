@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1720">
+  <title>Acompanhar diagnóstico | Smart Grid by ZURI</title>
+  <link rel="stylesheet" href="/static/landing.css">
+  <script src="/static/diagnostic.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/landing" aria-label="Smart Grid by ZURI">
+      <span class="brand-mark" aria-hidden="true">Z</span>
+      <span>SMART GRID <b>by ZURI</b></span>
+    </a>
+    <a class="top-note" href="/landing">Voltar</a>
+  </header>
+  <main class="status-shell">
+    <section class="form-card status-card" aria-labelledby="status-title">
+      <p class="eyebrow">ACOMPANHAMENTO PRIVADO</p>
+      <h1 id="status-title">Status do diagnóstico</h1>
+      <p id="status-message" class="lead">Validando seu link individual...</p>
+      <div id="status-details" class="status-details" hidden>
+        <div><span>Protocolo</span><code id="status-protocol"></code></div>
+        <div><span>Etapa</span><strong id="status-label"></strong></div>
+        <div><span>Pontos processados</span><strong id="status-progress"></strong></div>
+      </div>
+      <button id="refresh-status" class="submit-button" type="button" hidden>Atualizar status <span aria-hidden="true">↻</span></button>
+      <a id="report-link" class="submit-button" href="#" hidden>Ver diagnóstico <span aria-hidden="true">→</span></a>
+      <p id="status-error" class="message error" role="alert"></p>
+      <p class="fine-print">Este link é pessoal. Não o compartilhe publicamente. O acompanhamento não exibe dados de contato.</p>
+    </section>
+    <section id="report" class="form-card report-card" hidden aria-labelledby="report-title">
+      <p class="eyebrow">SEU DIAGNÓSTICO</p>
+      <h2 id="report-title">Resultados do Google Maps</h2>
+      <div id="report-content"></div>
+      <button id="print-report" class="secondary-button" type="button">Imprimir ou salvar como PDF</button>
+    </section>
+  </main>
+  <footer>© Smart Grid by ZURI · Link individual protegido por uma chave de acesso.</footer>
+</body>
+</html>

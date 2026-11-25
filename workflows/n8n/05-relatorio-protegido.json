@@ -1,0 +1,215 @@
+{
+  "name": "ZURI Smart Grid | 05 - Relatório Protegido",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "zuri-smart-grid/report",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5001",
+      "name": "Protected Report Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [200, 300],
+      "webhookId": "zuri-smart-grid-protected-report"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const crypto = require('crypto');\nconst body = $json.body ?? $json;\nconst id = body.request_id;\nconst token = body.status_token;\nif (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return { json: { valid: false } };\nreturn { json: { valid: true, request_id: id, token_hash: crypto.createHash('sha256').update(token).digest('hex') } };"
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5002",
+      "name": "Hash Report Capability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "report-input-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5003",
+      "name": "Report Capability Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_get_protected_report($1::uuid,$2::text);",
+        "options": { "queryReplacement": "={{ [$json.request_id, $json.token_hash] }}" }
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5004",
+      "name": "Authorize Completed Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [920, 220],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "authorized-and-ready",
+              "leftValue": "={{ $json.authorized && $json.report_ready }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5005",
+      "name": "Authorized Report Ready?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1160, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($('Authorize Completed Report').item.json.scan_id) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-GeoGrid-Client-ID", "value": "t2s-landing" }]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "timeout": 15000
+        }
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5006",
+      "name": "Fetch Report From Smart Grid Internally",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: true, report: $json } }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Cache-Control", "value": "no-store" },
+              { "name": "Referrer-Policy", "value": "no-referrer" }
+            ]
+          }
+        }
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5007",
+      "name": "Return Protected Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1680, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: false, report: null, error: 'Report is unavailable or not ready' } }}",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": { "entries": [{ "name": "Cache-Control", "value": "no-store" }] }
+        }
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5008",
+      "name": "Hide Unavailable Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1420, 340]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: false, error: 'Report service is temporarily unavailable' } }}",
+        "options": {
+          "responseCode": 503,
+          "responseHeaders": { "entries": [{ "name": "Cache-Control", "value": "no-store" }] }
+        }
+      },
+      "id": "a091c38a-2db8-4f9c-ae93-55c11cdd5009",
+      "name": "Report Service Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1160, 480]
+    }
+  ],
+  "connections": {
+    "Protected Report Webhook": {
+      "main": [[{ "node": "Hash Report Capability", "type": "main", "index": 0 }]]
+    },
+    "Hash Report Capability": {
+      "main": [
+        [{ "node": "Report Capability Input Valid?", "type": "main", "index": 0 }],
+        [{ "node": "Hide Unavailable Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Report Capability Input Valid?": {
+      "main": [
+        [{ "node": "Authorize Completed Report", "type": "main", "index": 0 }],
+        [{ "node": "Hide Unavailable Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Authorize Completed Report": {
+      "main": [
+        [{ "node": "Authorized Report Ready?", "type": "main", "index": 0 }],
+        [{ "node": "Report Service Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Authorized Report Ready?": {
+      "main": [
+        [{ "node": "Fetch Report From Smart Grid Internally", "type": "main", "index": 0 }],
+        [{ "node": "Hide Unavailable Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Report From Smart Grid Internally": {
+      "main": [
+        [{ "node": "Return Protected Report", "type": "main", "index": 0 }],
+        [{ "node": "Report Service Error", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "a091c38a-2db8-4f9c-ae93-55c11cdd5010",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

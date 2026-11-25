@@ -19,6 +19,39 @@ import unicodedata
 NOT_FOUND_RANK = 21
 
 
+def scan_coverage(points: list[dict], total_points: int | None = None) -> dict:
+    """Summarize point outcomes without changing the existing metric formulas."""
+    total = max(total_points or 0, len(points))
+    valid = sum(point.get("status") == "ok" for point in points)
+    no_results = sum(point.get("status") == "no_results" for point in points)
+    pending = sum(point.get("status") == "pending" for point in points)
+    failed = sum(
+        point.get("status") not in {"ok", "no_results", "pending"}
+        for point in points
+    )
+    pending += max(0, total - len(points))
+    coverage_pct = round(100 * valid / total, 1) if total else 0.0
+    if not valid:
+        coverage_level = "no_valid_measurement"
+    elif coverage_pct >= 100:
+        coverage_level = "complete"
+    elif coverage_pct >= 80:
+        coverage_level = "high"
+    elif coverage_pct >= 50:
+        coverage_level = "moderate"
+    else:
+        coverage_level = "insufficient"
+    return {
+        "requested_points": total,
+        "valid_points": valid,
+        "no_results_points": no_results,
+        "failed_points": failed,
+        "pending_points": pending,
+        "coverage_pct": coverage_pct,
+        "coverage_level": coverage_level,
+    }
+
+
 def _visibility_weight(rank):
     """Calculate visibility weight based on Google Maps ranking."""
 

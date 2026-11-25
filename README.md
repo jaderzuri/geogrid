@@ -149,11 +149,14 @@ To scan automatically, schedule the `--business-id` command weekly with Windows 
 | Environment variable | Default | Description |
 |---|---|---|
 | `GEOGRID_FETCHER` | `playwright` | `dataforseo` switches to the DataForSEO Maps API (set `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD`) |
+| `DATAFORSEO_LANGUAGE_CODE` | `pt` | Language code sent to DataForSEO Live (for example, `pt` for Portuguese or `en` for English) |
 | `GEOGRID_CONCURRENCY` | `2` | Parallel searches per scan |
 | `GEOGRID_PROXY` | none | Proxy, e.g. `http://user:pass@host:port` |
 | `GEOGRID_HEADLESS` | `1` | Set `0` to watch the browser work |
 | `GEOGRID_DB` | `geogrid.db` | SQLite database file |
 | `GEOGRID_MAPTILER_API_KEY` | none | MapTiler Cloud API key for the raster map |
+| `GEOGRID_EXTERNAL_API_TOKEN` | none | Bearer token that enables the authenticated n8n result-ingestion API |
+| `GEOGRID_EXTERNAL_LANGUAGE_CODE` | `pt` | Language metadata returned for external n8n scans |
 
 The web map uses MapTiler's official raster XYZ `streets-v4` tiles. Set
 `GEOGRID_MAPTILER_API_KEY` in the server environment before starting the app.
@@ -163,6 +166,21 @@ variables and restart or redeploy the service. The key is sent to the browser
 to request tiles, so use a public key restricted to the appropriate origin;
 prefer separate restricted keys for development and production. Keep the
 MapTiler and OpenStreetMap attribution shown on the map.
+
+DataForSEO Live uses `DATAFORSEO_LANGUAGE_CODE` for the search language and
+defaults to `pt`. Point outcomes distinguish a valid search where the monitored
+business was not ranked (20+), a search with no organic results (Ø), a failed
+request (!), and a point still awaiting processing (…). Coverage is the share
+of requested points with valid results; its operational labels are not
+statistical confidence or probabilities. Ranking indicators retain their
+existing formulas and use successfully queried points as their sample base.
+Live response-code categories are checked against the
+[official DataForSEO error reference](https://docs.dataforseo.com/v3/appendix/errors/).
+
+The authenticated `/api/external/*` API accepts results from n8n and never
+starts DataForSEO requests. Its fixed grid, idempotency, tenant scope, JSON
+contracts and recovery behavior are documented in
+[docs/n8n-integration.md](docs/n8n-integration.md).
 
 Indicator visibility can be customized from the indicator guide (the menu
 below the app name). Changes take effect when applied and are saved in the

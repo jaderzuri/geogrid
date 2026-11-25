@@ -1,0 +1,217 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: geogrid_queue
+      POSTGRES_USER: geogrid_homolog
+      POSTGRES_PASSWORD: "${HOMOLOG_POSTGRES_PASSWORD:-homolog-only-postgres-password}"
+    volumes:
+      - ../../workflows/n8n/sql/001-schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ../../workflows/n8n/sql/002-functions.sql:/docker-entrypoint-initdb.d/002-functions.sql:ro
+      - ../../workflows/n8n/sql/003-landing-crm-capability.sql:/docker-entrypoint-initdb.d/003-landing-crm-capability.sql:ro
+      - ../../workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql:/docker-entrypoint-initdb.d/004-capability-lifecycle-and-crm-dispatch.sql:ro
+      - ./005-homologation-budget.sql:/docker-entrypoint-initdb.d/005-homologation-budget.sql:ro
+      - postgres-state:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geogrid_homolog -d geogrid_queue"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [homolog]
+    restart: "no"
+
+  n8n-init:
+    image: docker.n8n.io/n8nio/n8n:1.123.21
+    entrypoint: ["sh", "/bootstrap/bootstrap-n8n.sh"]
+    environment: &n8n_environment
+      DB_TYPE: sqlite
+      N8N_ENCRYPTION_KEY: "${HOMOLOG_N8N_ENCRYPTION_KEY:-homolog-only-encryption-key-do-not-reuse}"
+      N8N_USER_FOLDER: /home/node/.n8n
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+      N8N_LOG_LEVEL: warn
+      N8N_LOG_REDACTED_HEADER_NAMES: "authorization,x-goog-api-key"
+      NODE_FUNCTION_ALLOW_BUILTIN: "crypto,url"
+      HOMOLOG_POSTGRES_PASSWORD: "${HOMOLOG_POSTGRES_PASSWORD:-homolog-only-postgres-password}"
+      HOMOLOG_GEOGRID_TOKEN: "${HOMOLOG_GEOGRID_TOKEN:-homolog-only-grid-token}"
+      MOCK_DATAFORSEO_USER: "${MOCK_DATAFORSEO_USER:-homolog-only-dataforseo-user}"
+      MOCK_DATAFORSEO_PASSWORD: "${MOCK_DATAFORSEO_PASSWORD:-homolog-only-dataforseo-password}"
+      MOCK_PLACES_API_KEY: "${MOCK_PLACES_API_KEY:-homolog-only-google-places-key}"
+      MOCK_CRM_TOKEN: "${MOCK_CRM_TOKEN:-homolog-only-crm-adapter-token}"
+    volumes:
+      - n8n-state:/home/node/.n8n
+      - ../../workflows/n8n:/source:ro
+      - ./bootstrap-n8n.sh:/bootstrap/bootstrap-n8n.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [homolog]
+    restart: "no"
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:1.123.21
+    environment:
+      <<: *n8n_environment
+      NODE_EXTRA_CA_CERTS: /certs/mock-cert.pem
+      N8N_HOST: n8n
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      N8N_PAYLOAD_SIZE_MAX: "1"
+      N8N_LOG_OUTPUT: console
+      N8N_METRICS: "true"
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: "20"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+      EXECUTIONS_DATA_PRUNE: "true"
+    volumes:
+      - n8n-state:/home/node/.n8n
+      - mock-certs:/certs:ro
+    depends_on:
+      n8n-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      mock-services:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:5678/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    ports:
+      - "127.0.0.1:5678:5678"
+    networks: [homolog]
+    restart: "no"
+
+  mock-services:
+    build:
+      context: .
+      dockerfile: Dockerfile.mock
+    environment:
+      MOCK_DATAFORSEO_USER: "${MOCK_DATAFORSEO_USER:-homolog-only-dataforseo-user}"
+      MOCK_DATAFORSEO_PASSWORD: "${MOCK_DATAFORSEO_PASSWORD:-homolog-only-dataforseo-password}"
+      MOCK_PLACES_API_KEY: "${MOCK_PLACES_API_KEY:-homolog-only-google-places-key}"
+      MOCK_CRM_TOKEN: "${MOCK_CRM_TOKEN:-homolog-only-crm-adapter-token}"
+      MOCK_CRM_DB: /tmp/mock-crm.sqlite
+      MOCK_TLS_CERT: /certs/mock-cert.pem
+      MOCK_TLS_KEY: /certs/mock-key.pem
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/__mock__/metrics',timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      homolog:
+        aliases:
+          - api.dataforseo.com
+          - places.googleapis.com
+          - crm-adapter
+    volumes:
+      - mock-certs:/certs
+    ports:
+      - "127.0.0.1:8081:8081"
+    restart: "no"
+
+  smart-grid:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      GEOGRID_DB: /data/geogrid-homolog.sqlite
+      GEOGRID_FETCHER: playwright
+      GEOGRID_EXTERNAL_API_TOKEN: "${HOMOLOG_GEOGRID_TOKEN:-homolog-only-grid-token}"
+      GEOGRID_EXTERNAL_LANGUAGE_CODE: pt
+      ZURI_N8N_LEADS_WEBHOOK_URL: http://n8n:5678/webhook/zuri-smart-grid/leads
+      ZURI_N8N_STATUS_WEBHOOK_URL: http://n8n:5678/webhook/zuri-smart-grid/status
+      ZURI_N8N_REPORT_WEBHOOK_URL: http://n8n:5678/webhook/zuri-smart-grid/report
+      ZURI_N8N_INTERNAL_HTTP_HOSTS: "n8n,mock-services,crm-adapter"
+      ZURI_CAMPAIGN_ID: homolog-event
+      ZURI_ALLOWED_CAMPAIGNS: homolog-event
+      ZURI_PRIVACY_POLICY_URL: https://privacy.invalid/homolog-v1
+      ZURI_PRIVACY_POLICY_VERSION: homolog-v1
+      ZURI_ALLOWED_ORIGINS: http://localhost:8080
+      ZURI_LEADS_RATE_LIMIT: "2000"
+      ZURI_STATUS_RATE_LIMIT: "1000"
+      ZURI_REPORT_RATE_LIMIT: "500"
+      ZURI_LEADS_RATE_WINDOW_SECONDS: "900"
+    volumes:
+      - smart-grid-state:/data
+    depends_on:
+      n8n:
+        condition: service_healthy
+      mock-services:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/landing',timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [homolog]
+    restart: "no"
+
+  edge:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      smart-grid:
+        condition: service_healthy
+    networks: [homolog]
+    restart: "no"
+
+  test-runner:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    environment:
+      HOMOLOG_ORIGIN: http://edge:8080
+      HOMOLOG_BROWSER_ORIGIN: http://localhost:8080
+      HOMOLOG_SMART_GRID_URL: http://smart-grid:8000
+      HOMOLOG_MOCK_METRICS_URL: http://mock-services:8081/__mock__/metrics
+      HOMOLOG_GEOGRID_TOKEN: "${HOMOLOG_GEOGRID_TOKEN:-homolog-only-grid-token}"
+      HOMOLOG_COUNTS: "${HOMOLOG_COUNTS:-50,100,500}"
+      HOMOLOG_CONCURRENCY: "${HOMOLOG_CONCURRENCY:-10,25,50}"
+      HOMOLOG_WAIT: "${HOMOLOG_WAIT:-1}"
+      HOMOLOG_DEADLINE_MS: "${HOMOLOG_DEADLINE_MS:-900000}"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: geogrid_homolog
+      PGDATABASE: geogrid_queue
+      PGPASSWORD: "${HOMOLOG_POSTGRES_PASSWORD:-homolog-only-postgres-password}"
+    depends_on:
+      edge:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    networks: [homolog]
+    restart: "no"
+
+networks:
+  homolog:
+    internal: true
+
+volumes:
+  postgres-state:
+    name: geogrid-homolog-postgres-state
+  smart-grid-state:
+    name: geogrid-homolog-smart-grid-state
+  n8n-state:
+    name: geogrid-homolog-n8n-state
+  mock-certs:
+    name: geogrid-homolog-mock-certs

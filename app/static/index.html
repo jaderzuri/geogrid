@@ -157,13 +157,15 @@
       <div class="help-views">
         <article class="help-view">
           <h4>Rank</h4>
-          <p>A posição do negócio em cada ponto; “20+” significa que não foi encontrado no top 20.</p>
+          <p>A posição do negócio em cada ponto; “20+” significa consulta válida sem a empresa no top 20. Ø indica ausência de resultados da pesquisa, não uma posição.</p>
           <div class="help-legend">
             <span><i class="help-swatch r1"></i>1–3</span>
             <span><i class="help-swatch r2"></i>4–10</span>
             <span><i class="help-swatch r3"></i>11–20</span>
-            <span><i class="help-swatch r4"></i>20+</span>
+            <span><i class="help-swatch r4"></i>20+ (consulta válida)</span>
+            <span><i class="help-swatch no-results"></i>Sem resultados (Ø)</span>
             <span><i class="help-swatch rx"></i>Erro (!)</span>
+            <span><i class="help-swatch pending"></i>Aguardando (…)</span>
           </div>
         </article>
         <article class="help-view">
@@ -173,7 +175,10 @@
             <span><i class="help-swatch ida-easy"></i>0–34,9</span>
             <span><i class="help-swatch ida-medium"></i>35–69,9</span>
             <span><i class="help-swatch ida-hard"></i>70–100</span>
-            <span><i class="help-swatch rx"></i>Sem dados (?) ou erro (!)</span>
+            <span><i class="help-swatch no-results"></i>Sem resultados (Ø)</span>
+            <span><i class="help-swatch rx"></i>Sem dados (?)</span>
+            <span><i class="help-swatch rx"></i>Erro (!)</span>
+            <span><i class="help-swatch pending"></i>Aguardando (…)</span>
           </div>
         </article>
         <article class="help-view">
@@ -181,7 +186,10 @@
           <p>IOP protótipo não validado, de 0 a 100: o gradiente vai de vermelho (menor) a verde (maior oportunidade).</p>
           <div class="help-legend">
             <span><i class="help-swatch iop"></i>Menor → maior</span>
-            <span><i class="help-swatch rx"></i>Sem dados (?) ou erro (!)</span>
+            <span><i class="help-swatch no-results"></i>Sem resultados (Ø)</span>
+            <span><i class="help-swatch rx"></i>Sem dados (?)</span>
+            <span><i class="help-swatch rx"></i>Erro (!)</span>
+            <span><i class="help-swatch pending"></i>Aguardando (…)</span>
           </div>
         </article>
       </div>
@@ -189,7 +197,7 @@
 
     <p class="help-notice">
       <strong>Importante:</strong> “?” indica dados insuficientes ou score indisponível; não significa zero.
-      “!” indica erro de varredura. Indicadores experimentais e protótipos são descritivos e não representam
+      “Ø” indica pesquisa sem resultados, “!” uma falha e “…” processamento pendente. Indicadores experimentais e protótipos são descritivos e não representam
       previsões comprovadas de sucesso, vendas ou confiança.
     </p>
   </div>
@@ -213,6 +221,7 @@
       </div>
     </div>
     <div id="progress" class="progress hidden"><div></div><span></span></div>
+    <div id="coverageInfo" class="coverage-info small" role="status" aria-live="polite"></div>
     <div id="metrics" class="metrics"></div>
     <div class="toggle" id="viewToggle">
       <button data-mode="rank" class="on">Ranks</button>
@@ -239,7 +248,9 @@
 
   <div class="legend card" id="rankLegend">
     <span><i class="sw r1"></i>1–3</span><span><i class="sw r2"></i>4–10</span>
-    <span><i class="sw r3"></i>11–20</span><span><i class="sw r4"></i>20+</span><span><i class="sw rx"></i>error</span>
+    <span><i class="sw r3"></i>11–20</span><span><i class="sw r4"></i>20+ (consulta válida)</span>
+    <span><i class="sw no-results"></i>Ø sem resultados</span><span><i class="sw rx"></i>! erro</span>
+    <span><i class="sw pending"></i>… aguardando</span>
   </div>
   <div class="legend card hidden" id="difficultyLegend">
     <span><i class="sw ida-easy"></i>0–34,9</span>

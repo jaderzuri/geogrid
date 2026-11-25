@@ -1,0 +1,706 @@
+{
+  "name": "ZURI Smart Grid | 03 - Recuperação de Resultados",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "45695154-5866-4677-98aa-87a54f054c22",
+      "name": "Poll Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_claim_pending_tasks($1::text,$2::integer);",
+        "options": {
+          "queryReplacement": "={{ ['recovery-' + $execution.id, 20] }}"
+        }
+      },
+      "id": "f0a3e897-9d8b-4b79-9c69-f4c00a479e39",
+      "name": "Atomically Claim Pending Task IDs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 220],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.dataforseo.com/v3/serp/google/maps/task_get/advanced/' + encodeURIComponent($json.task_id) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "neverError": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "06c2ebcc-2fa5-41e1-9abf-473c570c5b85",
+      "name": "Get Standard Advanced Result by Persisted ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 220],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "SELECT_DATAFORSEO_BASIC_CREDENTIAL_AFTER_IMPORT",
+          "name": "DataForSEO Basic Auth (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const claim = $('Atomically Claim Pending Task IDs').item.json;\nconst payload = $json.body ?? $json;\nconst task = Array.isArray(payload.tasks) ? payload.tasks[0] : null;\nconst rootCode = Number(payload.status_code);\nconst code = Number(task?.status_code ?? payload.status_code);\nconst message = typeof (task?.status_message ?? payload.status_message) === 'string' ? (task?.status_message ?? payload.status_message) : null;\nconst pendingCodes = new Set([20100, 40601, 40602]);\nconst errorCategories = { 40000: 'request_error', 40001: 'request_error', 40002: 'request_error', 40003: 'request_error', 40004: 'request_error', 40006: 'request_error', 40007: 'request_notice', 401: 'authentication_error', 40100: 'authentication_error', 40101: 'technical_error', 40103: 'technical_error', 40104: 'authentication_error', 40105: 'task_unavailable', 40106: 'partial_results', 40107: 'technical_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40207: 'access_denied', 40209: 'rate_limit', 40210: 'insufficient_balance', 40400: 'request_error', 40401: 'task_unavailable', 40402: 'request_error', 40403: 'task_unavailable', 40404: 'request_error', 40405: 'request_error', 40406: 'request_error', 40407: 'request_error', 40408: 'request_error', 40501: 'request_error', 40502: 'request_error', 40503: 'request_error', 40504: 'request_error', 40505: 'request_error', 40506: 'request_error', 50000: 'technical_error', 50001: 'technical_error', 50301: 'technical_error', 50303: 'technical_error', 50304: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet results = [];\nif (task?.result?.[0]?.items && Array.isArray(task.result[0].items)) {\n  results = task.result[0].items.filter(i => i && i.type === 'maps_search').slice(0, 20).map(i => ({ name: i.title || 'Unknown business', cid: i.cid ? String(i.cid) : null, place_id: i.place_id || null, lat: i.latitude ?? null, lng: i.longitude ?? null, rating: i.rating?.value ?? null, reviews: i.rating?.votes_count ?? null, category: i.category || null, address: i.address || null }));\n}\nlet state;\nlet pointStatus;\nlet errorCategory = null;\nlet errorMessage = null;\nif (pendingCodes.has(code)) {\n  state = 'pending';\n  pointStatus = 'pending';\n} else if (code === 40102 || (code === 20000 && results.length === 0)) {\n  state = 'no_results';\n  pointStatus = 'no_results';\n  errorCategory = 'no_results';\n} else if (code === 20000 && results.length > 0) {\n  state = 'done';\n  pointStatus = 'ok';\n} else {\n  state = 'failed';\n  pointStatus = 'error';\n  errorCategory = errorCategories[code] || 'technical_error';\n  errorMessage = message || (Number.isFinite(rootCode) ? `DataForSEO status ${rootCode}` : 'Invalid DataForSEO response');\n  results = [];\n}\nreturn { json: { request_id: claim.request_id, scan_id: claim.scan_id, business_id: claim.business_id, task_id: claim.task_id, row: claim.row_index, col: claim.col_index, lat: claim.latitude, lng: claim.longitude, poll_token: claim.claim_token, state, point_status: pointStatus, status_code: Number.isFinite(code) ? code : null, status_message: message, error_category: errorCategory, error_message: errorMessage, results } };"
+      },
+      "id": "155294da-fcca-4b94-9551-ad521247c909",
+      "name": "Classify and Normalize DataForSEO Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 220],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "task-still-pending",
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "pending",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22294c55-3f9f-45bf-ad1d-bbd0988ba888",
+      "name": "Is Task Still Pending",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1220, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($json.scan_id) + '/points' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { points: [{ row: $json.row, col: $json.col, lat: $json.lat, lng: $json.lng, status: $json.point_status, dataforseo_task_id: $json.task_id, results: $json.results, error: $json.error_message, error_category: $json.error_category, api_status_code: $json.status_code, api_status_message: $json.status_message }] } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "ea5e2659-abf2-4e31-bd78-f4ad9c773ede",
+      "name": "Import Result Idempotently to Smart Grid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1480, 340],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_record_task_result($1::uuid,$2::smallint,$3::smallint,$4::text,$5::uuid,$6::text,$7::integer,$8::text,$9::text,$10::text,$11::jsonb) AS saved;",
+        "options": {
+          "queryReplacement": "={{ [$('Classify and Normalize DataForSEO Result').item.json.request_id, $('Classify and Normalize DataForSEO Result').item.json.row, $('Classify and Normalize DataForSEO Result').item.json.col, $('Classify and Normalize DataForSEO Result').item.json.task_id, $('Classify and Normalize DataForSEO Result').item.json.poll_token, $('Classify and Normalize DataForSEO Result').item.json.state, $('Classify and Normalize DataForSEO Result').item.json.status_code, $('Classify and Normalize DataForSEO Result').item.json.status_message, $('Classify and Normalize DataForSEO Result').item.json.error_category, $('Classify and Normalize DataForSEO Result').item.json.error_message, JSON.stringify($('Classify and Normalize DataForSEO Result').item.json.results)] }}"
+        }
+      },
+      "id": "38a17536-1f24-443a-b49b-67d26cd6ae45",
+      "name": "Persist Poll Outcome and Progress",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1740, 340],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_ready_to_finalize($1::uuid) AS ready;",
+        "options": {
+          "queryReplacement": "={{ [$('Classify and Normalize DataForSEO Result').item.json.request_id] }}"
+        }
+      },
+      "id": "a81e9494-d94b-4495-91ed-df1fa54f89ad",
+      "name": "Check All Nine Points Resolved",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2000, 340],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ready-to-finalize",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ebf34631-a4e8-47da-9a9e-6cc07fb659a7",
+      "name": "Ready to Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2240, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($('Classify and Normalize DataForSEO Result').item.json.scan_id) + '/complete' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "5e51a964-60a3-4f90-bd0a-1df4f79c8fc3",
+      "name": "Complete Smart Grid Scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2500, 260],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_finalize_request($1::uuid) AS status;",
+        "options": {
+          "queryReplacement": "={{ [$('Classify and Normalize DataForSEO Result').item.json.request_id] }}"
+        }
+      },
+      "id": "5828ac94-af1b-4e98-b470-e922d0889c7d",
+      "name": "Finalize Queue Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2760, 260],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.request_id,r.scan_id FROM geogrid_requests r WHERE r.finished_at IS NULL AND r.status IN ('submitted','processing','partial','failed') AND (SELECT count(*) FROM geogrid_tasks t WHERE t.request_id=r.request_id AND t.state IN ('done','no_results','failed'))=9 AND (SELECT count(*) FROM geogrid_tasks t WHERE t.request_id=r.request_id)=9;",
+        "options": {}
+      },
+      "id": "861295a5-5594-4c40-a5eb-2ed8fb674fc7",
+      "name": "Find Ready Scans After Restart",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 520],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($json.scan_id) + '/complete' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "79f23a32-4e47-442e-9703-dc2a99cc11f5",
+      "name": "Recover Completion After Restart",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 520],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_finalize_request($1::uuid) AS status;",
+        "options": {
+          "queryReplacement": "={{ [$('Find Ready Scans After Restart').item.json.request_id] }}"
+        }
+      },
+      "id": "c98292c4-436b-45d7-9238-0b5758da2236",
+      "name": "Persist Recovered Completion",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [980, 520],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_recover_expired_work() AS recovered;",
+        "options": {}
+      },
+      "id": "dc81fc3f-7c19-43f3-a667-9366c72e20a7",
+      "name": "Recover Expired Leases Safely",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 680],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_record_task_result($1::uuid,$2::smallint,$3::smallint,$4::text,$5::uuid,'pending',NULL,'Result retrieval transport error; safe to retry by stored task ID','technical_error','Temporary result retrieval failure','[]'::jsonb) AS scheduled;",
+        "options": {
+          "queryReplacement": "={{ [$('Atomically Claim Pending Task IDs').item.json.request_id, $('Atomically Claim Pending Task IDs').item.json.row_index, $('Atomically Claim Pending Task IDs').item.json.col_index, $('Atomically Claim Pending Task IDs').item.json.task_id, $('Atomically Claim Pending Task IDs').item.json.claim_token] }}"
+        }
+      },
+      "id": "8fb36cbd-26e5-4f46-a5bc-95251e8d11ae",
+      "name": "Retry Free Result Retrieval Later",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [980, 500],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_list_unreported_failures(100);",
+        "options": {}
+      },
+      "id": "9204e96e-ec1d-4127-a4c9-f66872a4fa03",
+      "name": "Find Failed Points Not Yet Imported",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 840],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { ...$json, point: { row: $json.row_index, col: $json.col_index, lat: $json.latitude, lng: $json.longitude, status: 'error', dataforseo_task_id: $json.task_id || null, results: [], error: $json.error_message || $json.status_message || 'DataForSEO did not return a task ID', error_category: $json.error_category || 'technical_error', api_status_code: $json.status_code, api_status_message: $json.status_message } } };"
+      },
+      "id": "a9e3eb3a-dbd1-4292-9fb0-77d4e5ac66a8",
+      "name": "Build Failed Point Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 840]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($json.scan_id) + '/points' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { points: [$json.point] } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "2b9dfb77-9c4c-4017-976a-5798cf85d2fc",
+      "name": "Import Failed Outcome Idempotently",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 840],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_smartgrid_reported($1::uuid,$2::smallint,$3::smallint) AS reported;",
+        "options": {
+          "queryReplacement": "={{ [$('Build Failed Point Callback').item.json.request_id, $('Build Failed Point Callback').item.json.row_index, $('Build Failed Point Callback').item.json.col_index] }}"
+        }
+      },
+      "id": "f24a267e-0766-41c5-8924-a01b7378ec68",
+      "name": "Mark Failed Point Imported",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1240, 840],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Poll Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Atomically Claim Pending Task IDs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Ready Scans After Restart",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Recover Expired Leases Safely",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Failed Points Not Yet Imported",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atomically Claim Pending Task IDs": {
+      "main": [
+        [
+          {
+            "node": "Get Standard Advanced Result by Persisted ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Standard Advanced Result by Persisted ID": {
+      "main": [
+        [
+          {
+            "node": "Classify and Normalize DataForSEO Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Free Result Retrieval Later",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify and Normalize DataForSEO Result": {
+      "main": [
+        [
+          {
+            "node": "Is Task Still Pending",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retry Free Result Retrieval Later",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Task Still Pending": {
+      "main": [
+        [
+          {
+            "node": "Persist Poll Outcome and Progress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Import Result Idempotently to Smart Grid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import Result Idempotently to Smart Grid": {
+      "main": [
+        [
+          {
+            "node": "Persist Poll Outcome and Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Poll Outcome and Progress": {
+      "main": [
+        [
+          {
+            "node": "Check All Nine Points Resolved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check All Nine Points Resolved": {
+      "main": [
+        [
+          {
+            "node": "Ready to Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready to Complete?": {
+      "main": [
+        [
+          {
+            "node": "Complete Smart Grid Scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Complete Smart Grid Scan": {
+      "main": [
+        [
+          {
+            "node": "Finalize Queue Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Ready Scans After Restart": {
+      "main": [
+        [
+          {
+            "node": "Recover Completion After Restart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recover Completion After Restart": {
+      "main": [
+        [
+          {
+            "node": "Persist Recovered Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Failed Points Not Yet Imported": {
+      "main": [
+        [
+          {
+            "node": "Build Failed Point Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failed Point Callback": {
+      "main": [
+        [
+          {
+            "node": "Import Failed Outcome Idempotently",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import Failed Outcome Idempotently": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed Point Imported",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "c69988e3-a64b-421f-b925-f4eb7eb57a32",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

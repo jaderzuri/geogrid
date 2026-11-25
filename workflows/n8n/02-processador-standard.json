@@ -1,0 +1,735 @@
+{
+  "name": "ZURI Smart Grid | 02 - Processador Standard Normal",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "810e721c-e7ea-4f4e-9f4d-81091f343bb3",
+      "name": "Run Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_claim_next_request($1::text);",
+        "options": {
+          "queryReplacement": "={{ ['processor-' + $execution.id] }}"
+        }
+      },
+      "id": "8bcb478a-dfe1-48fd-9276-d83f2d5798d7",
+      "name": "Atomically Claim One Request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [440, 320],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { URL } = require('url');\nconst r = $json;\nlet placeId = null;\nif (r.google_maps_url) {\n  const url = new URL(r.google_maps_url);\n  placeId = url.searchParams.get('query_place_id') || url.searchParams.get('place_id');\n  if (!placeId) {\n    const match = r.google_maps_url.match(/!1s(ChIJ[A-Za-z0-9_-]+)/);\n    if (match) placeId = match[1];\n  }\n}\nreturn { json: { ...r, place_id: placeId || null } };"
+      },
+      "id": "e9c3df66-a9f0-477c-9d79-b7c6844197c7",
+      "name": "Extract Exact Google Place ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-place-id",
+              "leftValue": "={{ $json.place_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "56ad25f2-27d7-492f-95db-ed0e6425616c",
+      "name": "Has Verifiable Place ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [940, 320]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_release_prepaid_reservation($1::uuid,'manual_review',$2::text) AS held;",
+        "options": {
+          "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, 'Business identity or location could not be verified; no DataForSEO task_post was sent'] }}"
+        }
+      },
+      "id": "e55b85c2-70e8-407a-bf37-4f427c4b1f98",
+      "name": "Hold Unverified Business and Release Budget",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1200, 500],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ 'https://places.googleapis.com/v1/places/' + encodeURIComponent($json.place_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Goog-FieldMask",
+              "value": "id,displayName,location,formattedAddress,primaryTypeDisplayName"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "neverError": true
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "459719b6-d8d1-46b9-9b65-2823f3a5db87",
+      "name": "Resolve Exact Place Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GOOGLE_PLACES_CREDENTIAL_AFTER_IMPORT",
+          "name": "Google Places API Key (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const r = $('Extract Exact Google Place ID').item.json;\nconst p = $json;\nif (!p || !p.id || !p.location || !Number.isFinite(p.location.latitude) || !Number.isFinite(p.location.longitude)) throw new Error('Google Places did not return a verifiable location');\nconst name = p.displayName?.text || '';\nconst normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst requestedName = normalize(r.company_name);\nconst resolvedName = normalize(name);\nif (!requestedName || !resolvedName || !(resolvedName.includes(requestedName) || requestedName.includes(resolvedName))) throw new Error('Resolved Google Place name does not match the submitted company; manual review required');\nconst crypto = require('crypto');\nconst businessId = 'gplaces-' + crypto.createHash('sha256').update(p.id).digest('hex').slice(0, 40);\nreturn { json: { ...r, business_id: businessId, resolved_place_id: p.id, resolved_name: name, center_lat: p.location.latitude, center_lng: p.location.longitude, address: p.formattedAddress || `${r.city}, ${r.state}`, category: p.primaryTypeDisplayName?.text || null } };"
+      },
+      "id": "c0fd8818-8ee8-44a6-a0ea-48d0f98463d4",
+      "name": "Validate Resolved Business",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 240],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://smart-grid:8000/api/external/businesses",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { external_business_id: $json.business_id, name: $json.resolved_name, place_id: $json.resolved_place_id, lat: $json.center_lat, lng: $json.center_lng, address: $json.address, category: $json.category } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "neverError": false
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "39fd3675-b1dd-46bb-8c76-83a8fcb75aae",
+      "name": "Register Business in Smart Grid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1720, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://smart-grid:8000/api/external/scans",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-GeoGrid-Client-ID",
+              "value": "t2s-landing"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { external_request_id: $('Extract Exact Google Place ID').item.json.request_id, external_business_id: $('Validate Resolved Business').item.json.business_id, keyword: $('Extract Exact Google Place ID').item.json.keyword } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "80d66b72-ea70-4abc-91b5-eecf57d59de9",
+      "name": "Create Idempotent Smart Grid Scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+          "name": "Smart Grid External API Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const scan = $json;\nconst request = $('Extract Exact Google Place ID').item.json;\nif (!scan.scan_id || scan.grid_size !== 3 || scan.spacing_km !== 1 || scan.total !== 9 || scan.points?.length !== 9 || scan.language_code !== 'pt') throw new Error('Smart Grid returned an unexpected external scan contract');\nconst tasks = scan.points.map(p => ({ keyword: scan.keyword, location_coordinate: `${p.lat},${p.lng},14z`, language_code: 'pt', priority: 1, depth: 20, tag: `${request.request_id}:${p.row}:${p.col}` }));\nreturn { json: { request_id: request.request_id, claim_token: request.claim_token, scan_id: scan.scan_id, business_id: scan.business_id, center: scan.center, points: scan.points.map(p => ({ row: p.row, col: p.col, lat: p.lat, lng: p.lng })), tasks } };"
+      },
+      "id": "40a9be28-aea5-4c44-880a-dab1697b06b4",
+      "name": "Build Nine Standard Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 240],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_prepare_tasks($1::uuid,$2::uuid,$3::text,$4::text,$5::double precision,$6::double precision,$7::jsonb) AS prepared;",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id, $json.claim_token, $json.scan_id, $json.business_id, $json.center.lat, $json.center.lng, JSON.stringify($json.points)] }}"
+        }
+      },
+      "id": "206c8b23-42c5-48ef-9e90-d7ccbc6f16e8",
+      "name": "Persist Grid Before Paid Submission",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [2500, 240],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.dataforseo.com/v3/serp/google/maps/task_post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Build Nine Standard Tasks').item.json.tasks }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "neverError": true
+            }
+          },
+          "timeout": 45000
+        }
+      },
+      "id": "3af55b31-243f-4f5f-8fd5-c596a9687fb9",
+      "name": "Paid DataForSEO task_post - No Automatic Retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2760, 240],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "SELECT_DATAFORSEO_BASIC_CREDENTIAL_AFTER_IMPORT",
+          "name": "DataForSEO Basic Auth (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const response = $json.body ?? $json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst expected = build.tasks;\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet mapped;\nif (code !== 20000 && !Array.isArray(response.tasks)) {\n  mapped = expected.map((t, i) => ({ row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: code || null, status_message: message, cost: 0, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\n} else {\n  const tasks = Array.isArray(response.tasks) ? response.tasks : [];\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = expected.map((input, i) => {\n    let t = byTag.get(input.tag);\n    if (!t && tasks.length === expected.length) {\n      t = tasks.find(candidate => candidate.data?.location_coordinate === input.location_coordinate);\n    }\n    if (!t) return { row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: 0, error_category: 'technical_error', error_message: 'Missing task tag/coordinate; manual reconciliation required' };\n    const taskCode = Number(t.status_code);\n    return { row: build.points[i].row, col: build.points[i].col, task_id: t.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: t.status_message || message, cost: Number(t.cost || 0), error_category: categories[taskCode] || (t.id ? null : 'technical_error'), error_message: t.id ? null : (t.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nreturn { json: { request_id: build.request_id, task_results: mapped, total_cost_usd: Number(response.cost ?? mapped.reduce((sum, t) => sum + t.cost, 0)) } };"
+      },
+      "id": "46f1307a-bb84-4b24-8b2f-f9a9550b430a",
+      "name": "Associate and Classify task_post Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3020, 240],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_save_post_response($1::uuid,$2::jsonb,$3::numeric) AS status;",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id, JSON.stringify($json.task_results), $json.total_cost_usd] }}"
+        }
+      },
+      "id": "62ff8b67-13c7-4617-9292-88bb0eea341a",
+      "name": "Persist DataForSEO IDs and Cost",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [3280, 240],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_submission_uncertain($1::uuid,$2::text) AS reconciliation_required;",
+        "options": {
+          "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, 'task_post timed out, failed, or its response could not be durably associated; automatic resubmission is prohibited'] }}"
+        }
+      },
+      "id": "58a1edb9-cfe3-4896-aeab-c22a26a5f14b",
+      "name": "Mark Paid Submission Uncertain",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [3280, 520],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const outcome = $('Associate and Classify task_post Response').item.json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst coords = new Map(build.points.map(p => [`${p.row}:${p.col}`, p]));\nconst points = outcome.task_results.filter(t => !t.task_id && Number.isInteger(t.status_code) && ((t.status_code >= 40000 && t.status_code < 50000) || [401, 402].includes(t.status_code))).map(t => { const p = coords.get(`${t.row}:${t.col}`); return { row: t.row, col: t.col, lat: p.lat, lng: p.lng, status: 'error', results: [], error: t.error_message || t.status_message || 'DataForSEO rejected the task', error_category: t.error_category || 'technical_error', api_status_code: t.status_code, api_status_message: t.status_message }; });\nreturn { json: { request_id: outcome.request_id, scan_id: build.scan_id, points, point_cells: points.map(p => ({ row_index: p.row, col_index: p.col })) } };"
+        },
+        "id": "01b15780-89f2-4a1f-b021-76e44a89bb97",
+        "name": "Build Failed Submission Point Callbacks",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [3540, 240]
+    },
+    {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has-failed-points",
+                "leftValue": "={{ $json.points.length }}",
+                "rightValue": 0,
+                "operator": {
+                  "type": "number",
+                  "operation": "gt"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "6a651251-2206-4d0d-b5fa-47e8f213df02",
+        "name": "Any Failed Submission Points?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [3780, 240]
+    },
+    {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'http://smart-grid:8000/api/external/scans/' + encodeURIComponent($json.scan_id) + '/points' }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-GeoGrid-Client-ID",
+                "value": "t2s-landing"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { points: $json.points } }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "timeout": 15000
+          }
+        },
+        "id": "174cb6f2-9548-4239-8c63-06f3a5f25449",
+        "name": "Report Failed Submission Points",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [4020, 160],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "SELECT_GEOGRID_BEARER_CREDENTIAL_AFTER_IMPORT",
+            "name": "Smart Grid External API Bearer (configure after import)"
+          }
+        },
+        "onError": "continueErrorOutput"
+    },
+    {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT geogrid_mark_failed_points_reported($1::uuid,$2::jsonb) AS imported;",
+          "options": {
+            "queryReplacement": "={{ [$('Build Failed Submission Point Callbacks').item.json.request_id, JSON.stringify($('Build Failed Submission Point Callbacks').item.json.point_cells)] }}"
+          }
+        },
+        "id": "c1ac6ad5-a5c4-48b1-bdfa-3357690ab8bc",
+        "name": "Record Failed Point Callback Delivery",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [4280, 160],
+        "credentials": {
+          "postgres": {
+            "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+            "name": "GeoGrid Queue PostgreSQL (configure after import)"
+          }
+        }
+    },
+    {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT geogrid_release_prepaid_reservation($1::uuid,'queued',$2::text) AS requeued;",
+          "options": {
+            "queryReplacement": "={{ [$('Extract Exact Google Place ID').item.json.request_id, 'Pre-submission integration step failed; no DataForSEO task_post was sent'] }}"
+          }
+        },
+        "id": "898d6bb3-c2f5-4e51-9d06-12ea898b0519",
+        "name": "Requeue Safe Pre-Submission Error",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [2500, 520],
+        "credentials": {
+          "postgres": {
+            "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+            "name": "GeoGrid Queue PostgreSQL (configure after import)"
+          }
+        }
+      }
+  ],
+  "connections": {
+    "Run Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Atomically Claim One Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atomically Claim One Request": {
+      "main": [
+        [
+          {
+            "node": "Extract Exact Google Place ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Exact Google Place ID": {
+      "main": [
+        [
+          {
+            "node": "Has Verifiable Place ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Verifiable Place ID": {
+      "main": [
+        [
+          {
+            "node": "Resolve Exact Place Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Unverified Business and Release Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Exact Place Details": {
+      "main": [
+        [
+          {
+            "node": "Validate Resolved Business",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Unverified Business and Release Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Resolved Business": {
+      "main": [
+        [
+          {
+            "node": "Register Business in Smart Grid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Unverified Business and Release Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Business in Smart Grid": {
+      "main": [
+        [
+          {
+            "node": "Create Idempotent Smart Grid Scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Unverified Business and Release Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Idempotent Smart Grid Scan": {
+      "main": [
+        [
+          {
+            "node": "Build Nine Standard Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Requeue Safe Pre-Submission Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Nine Standard Tasks": {
+      "main": [
+        [
+          {
+            "node": "Persist Grid Before Paid Submission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hold Unverified Business and Release Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Grid Before Paid Submission": {
+      "main": [
+        [
+          {
+            "node": "Paid DataForSEO task_post - No Automatic Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Requeue Safe Pre-Submission Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paid DataForSEO task_post - No Automatic Retry": {
+      "main": [
+        [
+          {
+            "node": "Associate and Classify task_post Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Paid Submission Uncertain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Associate and Classify task_post Response": {
+      "main": [
+        [
+          {
+            "node": "Persist DataForSEO IDs and Cost",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Paid Submission Uncertain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist DataForSEO IDs and Cost": {
+      "main": [
+        [
+          {
+            "node": "Build Failed Submission Point Callbacks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Paid Submission Uncertain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failed Submission Point Callbacks": {
+      "main": [
+        [
+          {
+            "node": "Any Failed Submission Points?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Failed Submission Points?": {
+      "main": [
+        [
+          {
+            "node": "Report Failed Submission Points",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Report Failed Submission Points": {
+      "main": [
+        [
+          {
+            "node": "Record Failed Point Callback Delivery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "c65ba769-d9b4-4c09-a72f-986cf6940352",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

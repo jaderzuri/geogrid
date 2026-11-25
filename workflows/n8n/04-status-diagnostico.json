@@ -1,0 +1,210 @@
+{
+  "name": "ZURI Smart Grid | 04 - Status Privado do Diagnóstico",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "zuri-smart-grid/status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a001",
+      "name": "Private Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [200, 300],
+      "webhookId": "zuri-smart-grid-status"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const crypto = require('crypto');\nconst body = $json.body ?? $json;\nconst id = body.request_id;\nconst token = body.status_token;\nif (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return { json: { valid: false } };\nreturn { json: { valid: true, request_id: id, token_hash: crypto.createHash('sha256').update(token).digest('hex') } };"
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a002",
+      "name": "Hash and Validate Capability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid-capability-input",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a003",
+      "name": "Capability Input Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_get_public_status($1::uuid,$2::text);",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id, $json.token_hash] }}"
+        }
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a004",
+      "name": "Read Capability-Scoped Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [920, 220],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "authorized-token",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a005",
+      "name": "Status Capability Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1160, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: true, request_id: $json.request_id, status: $json.status, progress: $json.progress, total: $json.total, finished: $json.finished_at, report_ready: $json.report_ready } }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Cache-Control", "value": "no-store" },
+              { "name": "Referrer-Policy", "value": "no-referrer" }
+            ]
+          }
+        }
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a006",
+      "name": "Respond With Private Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1420, 100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: false, error: 'Status link is invalid or unavailable' } }}",
+        "options": {
+          "responseCode": 404,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Cache-Control", "value": "no-store" }
+            ]
+          }
+        }
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a007",
+      "name": "Hide Missing Or Invalid Status",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1420, 340]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { authorized: false, error: 'Status service is temporarily unavailable' } }}",
+        "options": {
+          "responseCode": 503,
+          "responseHeaders": {
+            "entries": [
+              { "name": "Cache-Control", "value": "no-store" }
+            ]
+          }
+        }
+      },
+      "id": "ff01db4e-4e8f-4f5c-b4b2-44ff6383a008",
+      "name": "Status Storage Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1160, 460]
+    }
+  ],
+  "connections": {
+    "Private Status Webhook": {
+      "main": [[{ "node": "Hash and Validate Capability", "type": "main", "index": 0 }]]
+    },
+    "Hash and Validate Capability": {
+      "main": [
+        [{ "node": "Capability Input Valid?", "type": "main", "index": 0 }],
+        [{ "node": "Hide Missing Or Invalid Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Capability Input Valid?": {
+      "main": [
+        [{ "node": "Read Capability-Scoped Status", "type": "main", "index": 0 }],
+        [{ "node": "Hide Missing Or Invalid Status", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read Capability-Scoped Status": {
+      "main": [
+        [{ "node": "Status Capability Authorized?", "type": "main", "index": 0 }],
+        [{ "node": "Status Storage Error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Status Capability Authorized?": {
+      "main": [
+        [{ "node": "Respond With Private Status", "type": "main", "index": 0 }],
+        [{ "node": "Hide Missing Or Invalid Status", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "c01cc798-fc4e-4c7a-b6d8-0917c5cfa001",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

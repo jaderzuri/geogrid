@@ -29,7 +29,9 @@ from .competitive_metrics import (
     target_brand_confidence,
 )
 from .fetchers.base import FetchError
-from .metrics import point_difficulty, scan_metrics
+from .external_api import ExternalRequestSizeLimitMiddleware, router as external_router
+from .landing import router as landing_router
+from .metrics import point_difficulty, scan_coverage, scan_metrics
 from .scan import compare, create_scans, make_fetcher, run_scan
 
 
@@ -95,6 +97,19 @@ app = FastAPI(
     title="GeoGrid",
     lifespan=lifespan,
 )
+
+app.add_middleware(ExternalRequestSizeLimitMiddleware)
+app.include_router(external_router)
+app.include_router(landing_router)
+
+
+@app.middleware("http")
+async def protect_landing_responses(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith(("/landing", "/diagnostico", "/api/landing/")):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 app.mount(
     "/static",
@@ -333,7 +348,9 @@ def remove_scan(
             detail="scan not found",
         )
 
-    if scan["status"] == "running":
+    if scan["status"] in {"running", "queued", "processing"} or (
+        scan["status"] == "partial" and not scan.get("finished")
+    ):
         raise HTTPException(
             status_code=409,
             detail="scan is still running",
@@ -411,21 +428,10 @@ def scan_analysis(
 
     metrics = scan_metrics(ranks)
 
-    total = len(scan_points)
-    valid_count = len(valid)
-
-    metrics["errors"] = (
-        total - valid_count
-    )
-
-    metrics["coverage_pct"] = (
-        round(
-            100 * valid_count / total,
-            1,
-        )
-        if total
-        else 0.0
-    )
+    coverage = scan_coverage(scan_points, scan.get("total", len(scan_points)))
+    metrics.update(coverage)
+    metrics["errors"] = coverage["failed_points"]
+    valid_count = coverage["valid_points"]
 
     # ----------------------------------------------
     # 4. Calculate difficulty for each point
@@ -443,8 +449,23 @@ def scan_analysis(
                 target=target,
             )
 
+        elif point.get("status") == "no_results":
+            difficulty = {
+                "ida": None,
+                "level": "dados_insuficientes",
+                "confidence": "not_estimated",
+                "evidence": "insufficient",
+                "reason": "sem_resultados",
+            }
+        elif point.get("status") == "pending":
+            difficulty = {
+                "ida": None,
+                "level": "dados_insuficientes",
+                "confidence": "not_estimated",
+                "evidence": "insufficient",
+                "reason": "aguardando_processamento",
+            }
         else:
-
             difficulty = {
                 "ida": None,
                 "level": "dados_insuficientes",
@@ -461,6 +482,10 @@ def scan_analysis(
                 "lng": point.get("lng"),
                 "rank": point.get("rank"),
                 "status": point.get("status"),
+                "error": point.get("error"),
+                "error_category": point.get("error_category"),
+                "api_status_code": point.get("api_status_code"),
+                "api_status_message": point.get("api_status_message"),
                 "difficulty": difficulty,
             }
         )

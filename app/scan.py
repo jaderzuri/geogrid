@@ -4,10 +4,10 @@ import logging
 import os
 
 from . import db
-from .fetchers.base import Fetcher
+from .fetchers.base import Fetcher, FetchStatusError
 from .grid import make_grid, validate_grid
 from .matching import find_rank
-from .metrics import competitor_leaderboard, scan_metrics
+from .metrics import competitor_leaderboard, scan_coverage, scan_metrics
 
 log = logging.getLogger("geogrid.scan")
 
@@ -57,18 +57,70 @@ async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = Non
         nonlocal consecutive_errors
         async with sem:
             if abort.is_set():
-                db.save_point(scan_id, point, None, "error", None, "skipped after repeated errors")
                 return
             try:
                 results = await fetcher.fetch(scan["keyword"], point.lat, point.lng)
+            except FetchStatusError as error:
+                log.warning(
+                    "point %s,%s returned provider outcome=%s category=%s code=%s",
+                    point.row,
+                    point.col,
+                    error.outcome,
+                    error.category,
+                    error.api_status_code,
+                )
+                db.save_point(
+                    scan_id,
+                    point,
+                    None,
+                    error.outcome if error.outcome in {"no_results", "pending"} else "error",
+                    error.results if error.results else None,
+                    str(error) if error.outcome == "error" else None,
+                    error_category=error.category,
+                    api_status_code=error.api_status_code,
+                    api_status_message=error.api_status_message,
+                )
+                if error.outcome == "error":
+                    consecutive_errors += 1
+                    if error.category in {
+                        "authentication_error",
+                        "access_denied",
+                        "insufficient_balance",
+                        "rate_limit",
+                        "duplicate_task_limit",
+                        "budget_limit",
+                    } or consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        abort.set()
+                else:
+                    consecutive_errors = 0
+                return
             except Exception as e:  # one bad point must not kill the scan
                 log.warning("point %s,%s failed: %s", point.row, point.col, e)
-                db.save_point(scan_id, point, None, "error", None, str(e)[:300])
+                db.save_point(
+                    scan_id,
+                    point,
+                    None,
+                    "error",
+                    None,
+                    str(e)[:300],
+                    error_category="technical_error",
+                )
                 consecutive_errors += 1
                 if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:  # most likely blocked; stop hammering Google
                     abort.set()
                 return
             consecutive_errors = 0
+            if not results:
+                db.save_point(
+                    scan_id,
+                    point,
+                    None,
+                    "no_results",
+                    [],
+                    None,
+                    error_category="no_results",
+                )
+                return
             rank = find_rank(results, target)
             db.save_point(scan_id, point, rank, "ok", results, None)
             ok.append((rank, results))
@@ -78,12 +130,23 @@ async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = Non
     except Exception as e:  # unexpected (DB etc.)
         db.finish_scan(scan_id, "failed", None, None, str(e)[:300])
         raise
-    if not ok:
-        db.finish_scan(scan_id, "failed", None, None, "every point failed (blocked by Google?)")
+    points = db.get_scan(scan_id).get("points", [])
+    metrics = scan_metrics([rank for rank, _ in ok])
+    metrics.update(scan_coverage(points, len(grid)))
+    metrics["errors"] = metrics["failed_points"]
+    if (
+        not ok
+        and metrics["no_results_points"] == 0
+        and metrics["failed_points"] > 0
+    ):
+        db.finish_scan(scan_id, "failed", metrics, None, "every point failed")
     else:
-        metrics = scan_metrics([rank for rank, _ in ok])
-        metrics["errors"] = len(grid) - len(ok)
-        db.finish_scan(scan_id, "done", metrics, competitor_leaderboard([res for _, res in ok]))
+        db.finish_scan(
+            scan_id,
+            "done",
+            metrics,
+            competitor_leaderboard([res for _, res in ok]),
+        )
 
 
 def compare(scan: dict, prev: dict) -> dict:

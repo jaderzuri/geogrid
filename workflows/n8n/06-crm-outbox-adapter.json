@@ -1,0 +1,162 @@
+{
+  "name": "ZURI Smart Grid | 06 - Adaptador CRM Outbox",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496001",
+      "name": "Dispatch CRM Events Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_claim_crm_outbox($1::text,$2::integer);",
+        "options": {
+          "queryReplacement": "={{ ['crm-' + $execution.id, 25] }}"
+        }
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496002",
+      "name": "Claim CRM Outbox Events Atomically",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const event = $json;\nif (!event.event_id || !event.event_key || !event.claim_token || !event.payload || typeof event.payload !== 'object') throw new Error('Invalid claimed CRM outbox record');\nreturn { json: { event_id: event.event_id, event_key: event.event_key, claim_token: event.claim_token, payload: event.payload } };"
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496003",
+      "name": "Build Idempotent CRM Adapter Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://crm-adapter:8081/internal/events",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Idempotency-Key",
+              "value": "={{ $json.event_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { event_key: $json.event_key, event: $json.payload } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "neverError": false
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496004",
+      "name": "Send Event to Configured Internal CRM Adapter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SELECT_CRM_ADAPTER_CREDENTIAL_AFTER_IMPORT",
+          "name": "CRM Adapter Bearer (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_crm_outbox_delivered($1::uuid,$2::uuid,$3::text) AS delivered;",
+        "options": {
+          "queryReplacement": "={{ [$('Build Idempotent CRM Adapter Request').item.json.event_id, $('Build Idempotent CRM Adapter Request').item.json.claim_token, $json.contact_id || null] }}"
+        }
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496005",
+      "name": "Mark CRM Event Delivered",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1240, 220],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_crm_outbox_failure($1::uuid,$2::uuid,$3::text,$4::text,TRUE) AS status;",
+        "options": {
+          "queryReplacement": "={{ [$('Build Idempotent CRM Adapter Request').item.json.event_id, $('Build Idempotent CRM Adapter Request').item.json.claim_token, 'adapter_transport_error', 'Internal idempotent CRM adapter did not confirm delivery'] }}"
+        }
+      },
+      "id": "b606c85a-17c5-4588-ae13-0e91f2496006",
+      "name": "Schedule Safe Idempotent Retry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1240, 460],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Dispatch CRM Events Every Minute": {
+      "main": [[{ "node": "Claim CRM Outbox Events Atomically", "type": "main", "index": 0 }]]
+    },
+    "Claim CRM Outbox Events Atomically": {
+      "main": [[{ "node": "Build Idempotent CRM Adapter Request", "type": "main", "index": 0 }], []]
+    },
+    "Build Idempotent CRM Adapter Request": {
+      "main": [[{ "node": "Send Event to Configured Internal CRM Adapter", "type": "main", "index": 0 }], [{ "node": "Schedule Safe Idempotent Retry", "type": "main", "index": 0 }]]
+    },
+    "Send Event to Configured Internal CRM Adapter": {
+      "main": [[{ "node": "Mark CRM Event Delivered", "type": "main", "index": 0 }], [{ "node": "Schedule Safe Idempotent Retry", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "b606c85a-17c5-4588-ae13-0e91f2496007",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

@@ -44,6 +44,8 @@ a { color: var(--accent); }
 .history .meta { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
 .badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--bg); color: var(--muted); align-self: start; }
 .badge.running { background: #dbeafe; color: #1d4ed8; }
+.badge.queued, .badge.processing { background: #dbeafe; color: #1d4ed8; }
+.badge.partial { background: #fef3c7; color: #92400e; }
 .badge.failed { background: #fee2e2; color: var(--danger); }
 
 main { flex: 1; position: relative; }
@@ -72,6 +74,7 @@ main { flex: 1; position: relative; }
 .progress { position: relative; height: 18px; background: var(--bg); border-radius: 99px; overflow: hidden; margin-top: 8px; }
 .progress div { height: 100%; background: color-mix(in srgb, var(--accent) 30%, #fff); transition: width .4s; }
 .progress span { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 18px; color: var(--text); }
+.coverage-info { margin: 8px 0; padding: 7px 9px; border-radius: 8px; background: var(--bg); }
 
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
@@ -88,10 +91,12 @@ tr.sel td { background: #fef3c7; }
 .sw.r1, .pin.r1 { background: var(--r1); } .sw.r2, .pin.r2 { background: var(--r2); }
 .sw.r3, .pin.r3 { background: var(--r3); } .sw.r4, .pin.r4 { background: var(--r4); }
 .sw.rx, .pin.rx { background: var(--rx); }
+.sw.no-results, .pin.no-results { background: #d1d5db; color: #374151; }
+.sw.pending, .pin.pending { background: #2563eb; color: #fff; }
 
 .pin { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
 .pin.r2 { color: #3b2f00; }
-.pin.pending { background: #fff; border: 2px dashed var(--rx); color: var(--muted); box-shadow: none; }
+.pin.pending { border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.35); }
 .pin.preview { width: 12px; height: 12px; background: var(--accent); opacity: .55; border: 2px solid #fff; }
 .pin.up { background: var(--up); } .pin.down { background: var(--down); } .pin.same { background: var(--rx); }
 .center-pin { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,.4); cursor: grab; }
@@ -183,6 +188,8 @@ tr.sel td { background: #fef3c7; }
 .help-swatch.r3 { background: var(--r3); }
 .help-swatch.r4, .help-swatch.ida-hard { background: var(--r4); }
 .help-swatch.rx { background: var(--rx); }
+.help-swatch.no-results { background: #d1d5db; }
+.help-swatch.pending { background: #2563eb; }
 .help-swatch.iop { width: 28px; border-radius: 99px; background: linear-gradient(90deg, #dc2626, #eab308, #16a34a); }
 .help-notice { margin: 16px 0 0; padding: 10px 12px; border-left: 3px solid var(--accent); border-radius: 5px; background: color-mix(in srgb, var(--accent) 7%, #fff); font-size: 12px; }
 .map-tile-status { position: absolute; z-index: 450; top: 50%; left: 50%; width: min(360px, calc(100% - 32px)); transform: translate(-50%, -50%); padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); text-align: center; }
