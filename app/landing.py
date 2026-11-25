@@ -203,10 +203,38 @@ def _normalize_lead(lead: LeadSubmission) -> dict:
 
 async def _post_to_n8n(url: str, payload: dict) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+        timeout_seconds = float(os.environ.get("ZURI_N8N_TIMEOUT_SECONDS", "30"))
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Landing integration timeout is misconfigured",
+        ) from error
+    if not 1 <= timeout_seconds <= 120:
+        raise HTTPException(
+            status_code=503,
+            detail="Landing integration timeout is misconfigured",
+        )
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                timeout_seconds,
+                connect=min(timeout_seconds, 5),
+                pool=min(timeout_seconds, 5),
+            ),
+            follow_redirects=False,
+        ) as client:
             response = await client.post(url, json=payload)
-    except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail="Lead service is temporarily unavailable") from error
+    except httpx.TimeoutException as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Integration service timed out; retry the same request",
+        ) from error
+    except httpx.NetworkError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Integration service is temporarily unavailable; retry the same request",
+        ) from error
     if response.status_code not in (200, 202):
         raise HTTPException(
             status_code=503 if response.status_code >= 500 else response.status_code,

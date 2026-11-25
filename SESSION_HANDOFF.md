@@ -4,63 +4,92 @@ Data: 2026-11-25
 
 ## Não fazer na retomada sem confirmação
 
-Não iniciar Smart Leads Intelligence nem novas funcionalidades. Primeiro
-retomar a correção/homologação dos `502` e o teste de restart. Não fazer commit,
-push, merge, deploy, chamadas pagas ou operações de produção sem autorização.
+Não iniciar Smart Leads Intelligence nem novas funcionalidades. A homologação
+local da correção dos `502` e do restart foi concluída; os próximos passos são
+investigar os casos de revisão manual, reconciliar submissões incertas e revisar
+o sizing. Não fazer commit, push, merge, deploy, chamadas pagas ou operações de
+produção sem autorização.
 
 ## Estado Git
 
 - Branch atual: `feature/dataforseo-standard-normal`.
-- Sem commit ou push nesta sessão.
-- `git diff --check` passou; lista proposta de checkpoint deve ser revista no
-  final deste handoff e aprovada antes de staging/commit.
-- Não incluir backups, bancos, secrets, contatos reais ou volumes no checkpoint.
+- HEAD continua no checkpoint `0c22286f72ae04a84195a3e2634ef73c3f0776b3`;
+  há alterações locais não commitadas.
+- Nenhum commit, push, merge ou deploy foi feito nesta retomada.
+- `git diff --check` passou antes das atualizações documentais; repetir ao
+  finalizar.
+- Não incluir backups, banco, secrets, dados de contato ou volumes em qualquer
+  checkpoint futuro sem revisão e autorização.
 
 ## Resultado técnico para retomar
 
-- Suíte: `204 passed`, 0 falhas, 1 aviso de depreciação do `httpx` em
-  `TestClient`.
-- Carga planejada 50/100/500: 50 e 100 aceitos; runner falhou no lote de 500
-  por HTTP 502. PostgreSQL isolado registrou 650 IDs/chaves idempotentes
-  únicos: 623 `done`, 20 `manual_review`, 7 `submission_uncertain`.
-- Nenhum custo real; chamadas apenas aos simuladores locais. Casos incertos não
-  podem ser reenviados automaticamente.
-- Status/relatório privado, tenant isolation, bearer incorreto, nove pontos e
-  `40102` passaram no smoke integrado anterior.
-- Recuperação pós-restart com trabalho pendente não foi comprovada. Uma
-  execução parcial do runner após restart parou na asserção de contagem, pois
-  o banco isolado já continha dados.
-- A documentação `docs/n8n-setup.md` contém métricas observadas e limitações.
+- Causa confirmada dos `502`: timeout fixo de 8 s no proxy da Landing Page,
+  menor que a confirmação de persistência do webhook.
+- O timeout é configurável (`ZURI_N8N_TIMEOUT_SECONDS`, padrão 30 s, faixa
+  1–120 s); timeout/rede retorna `503` retryable e requer o mesmo
+  `request_id` e payload em qualquer retry.
+- Carga final em n8n `1.123.21`, concorrência 50 e timeout 60 s: lotes
+  50/10, 100/25 e 500/50 concluídos com 654 respostas HTTP `202`, zero
+  `502`/`503`; 651 solicitações únicas, três duplicatas idempotentes
+  reconhecidas e zero linhas duplicadas.
+- Estados finais: 595 `done`, 34 `manual_review`, 22 `submission_uncertain`.
+  Os 34 casos de revisão não iniciaram `task_post`; os 22 incertos não podem
+  ser reenviados automaticamente. A mensagem de revisão é genérica e sua causa
+  específica não foi isolada.
+- Mock: 595 `task_post`, 5.355 IDs salvos e distintos, 5.355 `task_get`, 617
+  respostas válidas do Places e 3.760 eventos CRM; custo simulado/real zero.
+- Segurança integrada: status e relatório protegidos, tenant isolation,
+  bearer inválido rejeitado, nove pontos e `40102 No Search Results` aprovados.
+- Restart isolado com tarefas pendentes: n8n e Smart Grid voltaram a ficar
+  saudáveis; polling e requests `done` avançaram; IDs persistidos permaneceram
+  únicos e não foram reenviados. Submissões em voo foram marcadas incertas.
+- Regressão final: `206 passed`, 0 falhas, 1 aviso de depreciação do `httpx`
+  em `TestClient`.
+- Percentuais: projeto **89%**; homologação integrada **100% dos critérios
+  locais definidos**, sem equivaler a prontidão de produção.
+- O resultado histórico anterior permanece: 650 solicitações, 623 `done`,
+  20 `manual_review`, 7 `submission_uncertain` e respostas `502`.
+- Métricas e limitações completas estão em `docs/n8n-setup.md` e `PROGRESS.md`.
 
 ## Homologação preservada
 
-Todos os containers de aplicação estão parados. Volumes existentes não foram
-removidos:
+Todos os containers de homologação estão parados. Volumes históricos e das
+novas rodadas foram preservados; nenhum volume foi removido:
 
 - `geogrid-homolog-postgres-state`
 - `geogrid-homolog-n8n-state`
 - `geogrid-homolog-smart-grid-state`
 - `geogrid-homolog-mock-certs`
+- `geogrid-homolog-20261125-{postgres,n8n,smart-grid}-state` e
+  `geogrid-homolog-20261125-mock-certs`
+- `geogrid-homolog-20261125-fixed-{postgres,n8n,smart-grid}-state` e
+  `geogrid-homolog-20261125-fixed-mock-certs`
+- `geogrid-homolog-20261125-verified-{postgres,n8n,smart-grid}-state` e
+  `geogrid-homolog-20261125-verified-mock-certs`
+- `geogrid-homolog-20261125-verified2-{postgres,n8n,smart-grid}-state` e
+  `geogrid-homolog-20261125-verified2-mock-certs`
 
-Não foi encontrado arquivo `geogrid-*` em `/tmp`. A evidência estruturada fica
-nos volumes isolados; contém apenas dados sintéticos e deve permanecer fora do
-Git. Não usar `docker compose down -v`, `docker volume rm` ou limpeza de
-volumes. O banco SQLite local e backups foram preservados.
+Os arquivos de amostragem de CPU/memória, sem dados pessoais, estão preservados
+em `/tmp/geogrid-homolog-fixed-resource-samples.csv`,
+`/tmp/geogrid-homolog-verified-resource-samples.csv` e
+`/tmp/geogrid-homolog-verified2-resource-samples.csv`. Dados sintéticos dos
+bancos/volumes ficam fora do Git. Não usar `docker compose down -v`,
+`docker volume rm` ou limpeza de volumes. O SQLite local e backups foram
+preservados.
 
 ## Comandos para retomada
 
 Na raiz do repositório:
 
 ```sh
-# Regressão
+# Regressão completa
 .venv/bin/python -m pytest -q
 
-# Validar compose e workflows sem iniciar chamadas externas
+# Validar o Compose sem iniciar serviços
 docker compose -p geogrid-homolog-next -f tests/integration/compose.yaml config -q
-node -e 'const fs=require("fs"); for (const f of fs.readdirSync("workflows/n8n").filter(x=>x.endsWith(".json"))) JSON.parse(fs.readFileSync(`workflows/n8n/${f}`,"utf8"))'
 
-# O compose declara nomes de volume fixos. Para uma rodada nova sem tocar
-# nos volumes de evidência atuais, crie este override fora do repositório:
+# Para uma rodada nova, defina nomes de volumes exclusivos fora do repositório.
+# Nunca reutilize os projetos/volumes de evidência listados acima.
 cat > /tmp/geogrid-homolog-next-volumes.yaml <<'YAML'
 volumes:
   postgres-state:
@@ -74,7 +103,7 @@ volumes:
 YAML
 
 # Nova stack e volumes próprios; somente serviços mockados
-docker compose -p geogrid-homolog-next -f tests/integration/compose.yaml -f /tmp/geogrid-homolog-next-volumes.yaml up -d
+docker compose -p geogrid-homolog-next -f tests/integration/compose.yaml -f /tmp/geogrid-homolog-next-volumes.yaml up -d --build
 docker compose -p geogrid-homolog-next -f tests/integration/compose.yaml -f /tmp/geogrid-homolog-next-volumes.yaml --profile test run --rm test-runner
 
 # Parar sem remover evidências
@@ -85,44 +114,19 @@ O runner espera banco vazio e falha na checagem de contagem se reutilizar uma
 homologação que já contém pedidos. O Compose usa nomes de volume explícitos;
 somente mudar `-p` não isola os dados. O override acima cria nomes distintos e
 evita alterar os volumes de evidência existentes. Nunca usar `down -v`.
-Repetir o lote de 500 somente após tratar os `502`; não interpretar persistência
-como resposta HTTP bem-sucedida.
+Em qualquer retry, preservar o mesmo `request_id`; não interpretar persistência
+sem resposta HTTP `202` como confirmação ao usuário.
 
-## Inventário integral do worktree
+## Inventário do worktree nesta retomada
 
 Modificados:
 
-`README.md`; `app/cli.py`; `app/db.py`; `app/fetchers/base.py`;
-`app/fetchers/dataforseo.py`; `app/main.py`; `app/metrics.py`; `app/scan.py`;
-`app/static/app.js`; `app/static/index.html`; `app/static/style.css`;
-`tests/test_scan_analysis.py`; `tests/test_ui_help_panel.py`.
+`app/landing.py`; `docs/n8n-setup.md`; `tests/integration/compose.yaml`;
+`tests/integration/run_homologation.mjs`; `tests/test_landing.py`;
+`ROADMAP.md`; `PROGRESS.md`; `TASKS.md`; `CHANGELOG.md`;
+`SESSION_HANDOFF.md`; `.github/copilot-instructions.md`.
 
-Novos arquivos não-backup:
-
-`app/external_api.py`; `app/landing.py`; `app/static/diagnostic.html`;
-`app/static/diagnostic.js`; `app/static/landing.css`;
-`app/static/landing.html`; `app/static/landing.js`; `docs/crm-t2s-adapter.md`;
-`docs/n8n-integration.md`; `docs/n8n-setup.md`;
-`tests/integration/005-homologation-budget.sql`;
-`tests/integration/Dockerfile.mock`;
-`tests/integration/Dockerfile.test-runner`;
-`tests/integration/bootstrap-n8n.sh`; `tests/integration/compose.yaml`;
-`tests/integration/mock_services.py`; `tests/integration/nginx.conf`;
-`tests/integration/run_homologation.mjs`; `tests/test_dataforseo.py`;
-`tests/test_external_api.py`; `tests/test_landing.py`;
-`tests/test_n8n_queue_artifacts.py`; `tests/test_scan_coverage.py`;
-`workflows/n8n/01-recepcao-leads.json`;
-`workflows/n8n/02-processador-standard.json`;
-`workflows/n8n/03-recuperacao-resultados.json`;
-`workflows/n8n/04-status-diagnostico.json`;
-`workflows/n8n/05-relatorio-protegido.json`;
-`workflows/n8n/06-crm-outbox-adapter.json`;
-`workflows/n8n/sql/000-create-database.sql`;
-`workflows/n8n/sql/001-schema.sql`; `workflows/n8n/sql/002-functions.sql`;
-`workflows/n8n/sql/003-landing-crm-capability.sql`;
-`workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql`.
-
-Backups mantidos, fora do commit proposto:
+Backups mantidos fora de qualquer commit:
 
 `app/competitive_metrics.py.before_recurrence_fix.bak`;
 `app/competitor_identity.py.before_conflict_fix.bak`;
@@ -147,9 +151,14 @@ de alteração de código com backup, não necessário à execução da aplicaç
 
 ## Próxima atividade
 
-1. Identificar precisamente o caminho que gera `502` após persistência e definir
-   resposta/retry idempotente sem duplicar pedidos.
-2. Rodar regressão focada e suíte completa.
-3. Reexecutar cargas progressivas e coletar métricas por lote.
-4. Demonstrar recuperação após restart com tarefas pendentes e IDs mockados.
-5. Atualizar relatório e preparar checkpoint para aprovação.
+1. Isolar a causa dos 34 `manual_review` com evidência segura, sem introduzir
+   novas chamadas pagas.
+2. Revisar e reconciliar os 22 `submission_uncertain` pelo procedimento
+   operacional; nunca reenviá-los automaticamente.
+3. Confirmar recursos, backup/restauração, retenção e monitoramento no Easypanel
+   antes de qualquer proposta de publicação.
+4. Obter documentação/contratos oficiais do CRM T2S antes de implementar a
+   integração real.
+
+Smart Leads Intelligence permanece futuro, não iniciado e não autorizado.
+Nenhum commit, push, merge, deploy ou chamada paga está autorizado.

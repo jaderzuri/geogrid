@@ -1,20 +1,26 @@
 # Smart Grid by ZURI — Próximas tarefas
 
-## Retomada — não iniciar até nova sessão
+## Homologação integrada — executada em 2026-11-25
 
-- [ ] Investigar e corrigir a resposta `HTTP 502` quando o webhook persiste o
-  pedido, mas a Landing Page não recebe confirmação.
-- [ ] Adicionar teste que reproduza persistência + timeout/erro de resposta e
-  confirme retry idempotente com o mesmo `request_id`.
-- [ ] Reexecutar a carga integrada gradualmente: 50, 100 e 500 solicitações;
-  registrar recebidas, respostas HTTP, persistidas, concluídas, filas,
-  percentis, CPU/memória, custo simulado e duplicidades por lote.
-- [ ] Executar teste de restart end-to-end interrompendo tarefa com IDs
-  DataForSEO simulados já persistidos; confirmar polling recuperado sem novo
-  `task_post`.
-- [ ] Reconciliar os 7 casos `submission_uncertain` do ensaio (somente evidência
-  simulada; nunca reenviar automaticamente).
-- [ ] Repetir a suíte completa de 204 testes depois das correções.
+- [x] Confirmar causa dos `HTTP 502`: timeout fixo de 8 s, menor que a
+  confirmação de persistência no webhook n8n.
+- [x] Configurar timeout do backend, retornar `503` retryable em timeout/falha
+  de rede e orientar retry com o mesmo `request_id`.
+- [x] Confirmar retry idempotente e ausência de linhas duplicadas.
+- [x] Executar lotes progressivos de 50/100/500 com concorrência 10/25/50;
+  registrar HTTP, latência, persistência, processamento, CRM, custos,
+  duplicidades e CPU/memória.
+- [x] Reiniciar n8n e Smart Grid com fila e IDs simulados pendentes; confirmar
+  que polling retomou e IDs existentes não foram reenviados.
+- [x] Confirmar unicidade dos 5.355 IDs simulados; custo simulado/real zero.
+- [x] Repetir a suíte completa: `206 passed`, 0 falhas, 1 aviso de depreciação.
+- [x] Atualizar relatório, roadmap, progresso e handoff.
+
+Resultado final: 651 requests únicos (650 dos lotes e 1 `No Search Results`),
+595 `done`, 34 `manual_review` e 22 `submission_uncertain`. Todos os envios
+HTTP foram `202` na configuração final; não houve `502`/`503`. Os casos
+incertos requerem reconciliação manual, sem reenvio automático. A causa
+específica dos 34 casos de revisão manual não foi isolada.
 
 ## Integração e prontidão — dependem de aprovação/insumos
 

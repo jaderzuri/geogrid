@@ -159,30 +159,50 @@ async function submitBatch(batch, count, maxConcurrency) {
   const responseTimes = [];
   const receipts = new Array(count);
   const failures = [];
+  let transientRetries = 0;
+  let retryAccepted = 0;
   let cursor = 0;
   const worker = async () => {
     while (true) {
       const index = cursor++;
       if (index >= leads.length) return;
       const started = performance.now();
-      try {
-        const response = await requestJson(`${origin}/api/landing/leads`, {
-          method: 'POST',
-          headers: { Origin: browserOrigin },
-          body: JSON.stringify(leads[index]),
-          timeoutMs: 20_000
-        });
-        responseTimes.push(performance.now() - started);
-        if (response.status !== 202 || response.body?.accepted !== true) {
-          failures.push({ index, status: response.status });
-          continue;
+      let accepted = false;
+      const attempts = [];
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const response = await requestJson(`${origin}/api/landing/leads`, {
+            method: 'POST',
+            headers: { Origin: browserOrigin },
+            body: JSON.stringify(leads[index]),
+            timeoutMs: 90_000
+          });
+          attempts.push(response.status);
+          if (response.status === 202 && response.body?.accepted === true) {
+            receipts[index] = {
+              request_id: response.body.request_id,
+              status_token: response.body.status_token
+            };
+            responseTimes.push(performance.now() - started);
+            if (attempt > 0) retryAccepted += 1;
+            accepted = true;
+            break;
+          }
+          if (response.status !== 503 || attempt === 2) {
+            failures.push({ index, status: response.status, attempts });
+            break;
+          }
+        } catch {
+          attempts.push('transport_error');
+          if (attempt === 2) {
+            failures.push({ index, status: 'transport_error', attempts });
+            break;
+          }
         }
-        receipts[index] = {
-          request_id: response.body.request_id,
-          status_token: response.body.status_token
-        };
-      } catch {
-        failures.push({ index, status: 'transport_error' });
+        transientRetries += 1;
+      }
+      if (!accepted && !failures.some(failure => failure.index === index)) {
+        failures.push({ index, status: 'retry_not_accepted', attempts });
       }
     }
   };
@@ -202,6 +222,8 @@ async function submitBatch(batch, count, maxConcurrency) {
     leads,
     receipts,
     responseTimes,
+    transientRetries,
+    retryAccepted,
     duplicateAccepted: duplicate.body.duplicate === true
   };
 }
@@ -346,6 +368,8 @@ async function main() {
       accepted: batch.responseTimes.length,
       duplicateRetries: 1,
       duplicateAccepted: batch.duplicateAccepted,
+      transientRetries: batch.transientRetries,
+      retryAccepted: batch.retryAccepted,
       elapsedSeconds: httpElapsedSeconds,
       meanMs: Number((batch.responseTimes.reduce((sum, item) => sum + item, 0) / batch.responseTimes.length).toFixed(2)),
       p50Ms: percentile(batch.responseTimes, 50),

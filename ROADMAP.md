@@ -29,23 +29,27 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 
 ## Evolução estimada
 
-- **Projeto: 80%.** Estimativa ponderada por marcos, não por linhas de código ou
+- **Projeto: 89%.** Estimativa ponderada por marcos, não por linhas de código ou
   quantidade de testes:
   - Smart Grid Live, indicadores e compatibilidade: 20/20 pontos.
   - API externa autenticada e idempotente: 15/15.
-  - Fila e workflows Standard: 17/20 (implementados; há homologação pendente).
+  - Fila e workflows Standard: 17/20 (homologados localmente; T2S e operação
+    real no Easypanel ainda não integrados).
   - Landing, status, relatório e outbox CRM: 12/15 (T2S real não conectado).
-  - Homologação integrada: 11/20 (smoke e lotes menores; 500 e restart não
-    passaram integralmente).
+  - Homologação integrada: 20/20 (recepção 50/100/500, restart com fila
+    pendente, segurança e regressão executados em ambiente isolado).
   - Prontidão operacional/documentação: 5/10.
-  - Total: **80/100 pontos estimados**.
-- **Homologação integrada: 70%.** Percentual ponderado por oito critérios:
-  ambiente/workflows reais (20 pontos), smoke funcional Standard e relatório
-  (15), verificações de segurança (10), regressão automatizada (10) e lotes de
-  50/100 (15) foram concluídos: 70 pontos. Lote integral de 500 (15), restart
-  com tarefas pendentes (10) e investigação dos `502` (5) estão pendentes:
-  30 pontos. O caminho HTTP sob carga teve falhas; persistência não é contada
-  como confirmação HTTP bem-sucedida.
+  - Total: **89/100 pontos estimados**. O total aumenta 9 pontos porque o
+    marco de homologação passou de 11/20 para 20/20; não representa percentual
+    de código nem prontidão de produção.
+- **Homologação integrada: 100% dos critérios de teste definidos.** Pesos:
+  ambiente/workflows reais (20), smoke Standard/relatório (15), segurança
+  (10), regressão automatizada (10), lotes 50/100 (15), lote 500 (15),
+  restart com tarefas pendentes (10) e diagnóstico/correção dos `502` (5).
+  Os oito critérios foram exercitados. A configuração final recebeu HTTP `202`
+  em todas as submissões, sem `502`/`503`, com 651 solicitações únicas e sem
+  duplicidade de linhas. Este percentual é limitado ao ambiente local mockado;
+  não certifica produção.
 
 ## Marcos
 
@@ -61,13 +65,32 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 5. Homologação local isolada com os seis workflows reais, PostgreSQL 16 e
    serviços externos simulados.
 
-### Próxima atividade autorizada
+### Resultado da homologação
 
-Investigar os `HTTP 502` na recepção sob concorrência, garantindo resposta
-coerente quando o webhook já persistiu a solicitação. Em seguida, repetir em
-ambiente isolado os lotes de 50, 100 e 500 e executar um teste de restart que
-interrompa uma tarefa efetivamente pendente. Não iniciar trabalho até a próxima
-sessão e confirmação do usuário.
+- Causa dos `502` confirmada: timeout fixo de 8 s no caminho da Landing Page,
+  menor que o tempo de confirmação de persistência do webhook.
+- Timeout configurável (padrão 30 s, faixa 1–120 s); erros de transporte são
+  `503` retryable e orientam repetir com o mesmo identificador idempotente.
+- A configuração final de teste usou n8n concorrência 50 e timeout 60 s:
+  lotes 50/100/500 com concorrência 10/25/50 tiveram 654 respostas `202`
+  (incluindo duplicatas idempotentes e o caso especial), sem `502`/`503`.
+- PostgreSQL final: 651 requests únicos; 595 `done`, 34 `manual_review` e
+  22 `submission_uncertain`. Os últimos estados não foram reenviados
+  automaticamente; 22 continuam exigindo reconciliação e 34 não originaram
+  chamadas DataForSEO.
+- Restart isolado com IDs pendentes: polling e processamento retomaram após
+  reiniciar n8n/Smart Grid; IDs já persistidos não foram reenviados.
+- Suíte: 206 testes aprovados. Resultado detalhado e métricas em
+  `docs/n8n-setup.md` e `PROGRESS.md`.
+
+### Próximas atividades autorizadas
+
+Não iniciar novas funcionalidades. Antes de qualquer publicação, revisar a
+causa ainda não isolada dos 34 `manual_review`, reconciliar manualmente os 22
+`submission_uncertain` sem reenvio automático, validar sizing no Easypanel e
+obter contratos oficiais da integração T2S. Cada etapa operacional exige
+aprovação explícita; Smart Leads Intelligence continua não iniciado e não
+autorizado.
 
 ### Planejamento futuro — Smart Leads Intelligence
 

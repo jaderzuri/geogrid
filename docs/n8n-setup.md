@@ -223,6 +223,7 @@ produção nesta etapa:
 | `ZURI_N8N_STATUS_WEBHOOK_URL` | URL fixa do webhook do workflow 04; o backend envia `request_id` e capability no corpo JSON. |
 | `ZURI_N8N_REPORT_WEBHOOK_URL` | URL fixa do webhook do workflow 05; o backend envia `request_id` e capability no corpo JSON. |
 | `ZURI_N8N_INTERNAL_HTTP_HOSTS` | Allowlist explícita de DNS privado para HTTP entre containers; opcional. |
+| `ZURI_N8N_TIMEOUT_SECONDS` | Timeout do backend para webhooks n8n; padrão 30 s, faixa permitida 1–120 s. Um timeout gera HTTP 503 e deve ser tentado novamente com o mesmo `request_id` e os mesmos dados, pois a primeira tentativa pode já ter sido persistida. |
 | `ZURI_ALLOWED_ORIGINS` | Origens exatas permitidas, separadas por vírgula (ex.: `https://diagnostico.exemplo.com`); sem configuração, usa a origem vista pelo FastAPI. |
 | `ZURI_CAMPAIGN_ID` | Campanha padrão que o backend aceita. |
 | `ZURI_ALLOWED_CAMPAIGNS` | IDs adicionais permitidos, separados por vírgula; QR pode usar `?campaign=<id>`. |
@@ -498,58 +499,90 @@ de produção. Antes de ativar em Easypanel, use ambiente isolado de homologaç�
 6. Só depois de aprovação explícita configure os secrets de produção e ative
    os seis workflows.
 
-Os testes automatizados de carga do repositório incluem cenários simulados; a
-carga integrada abaixo exercitou os workflows reais no n8n, mas não concluiu
-com sucesso o lote HTTP de 500. Os números medem apenas este ambiente local
-descartável, não preveem throughput do Easypanel compartilhado nem incluem
-DataForSEO/Google Places reais.
+Os resultados abaixo vieram de containers e volumes exclusivos de homologação.
+Não alteraram o SQLite local/de produção, não publicaram no Easypanel e não
+fizeram chamadas reais a DataForSEO, Google Places ou T2S.
 
-### Auditoria executada em homologação isolada
+### Diagnóstico e correção dos HTTP 502
 
-A validação abaixo foi executada em containers descartáveis; não alterou o
-banco SQLite, não publicou no Easypanel e não realizou chamadas a provedores:
+A Landing Page usava timeout fixo de 8 segundos para o webhook. O workflow de
+recepção só responde após persistir no PostgreSQL; sob carga, o cliente podia
+expirar e devolver `502` embora a linha já tivesse sido gravada. Isso explica
+por que “persistido” não equivalia a “HTTP 202 confirmado”. O timeout agora é
+configurável por `ZURI_N8N_TIMEOUT_SECONDS` (padrão 30 s, faixa 1–120 s), com
+timeout de conexão/pool limitado a 5 s. Falhas de transporte e timeout são
+devolvidos como `503` sanitizado e retryable, nunca como sucesso; qualquer
+retry precisa manter o mesmo `request_id` e payload.
 
-- PostgreSQL `16-alpine`: schemas 001/003 e funções 002/003 foram aplicados
-  com `ON_ERROR_STOP=1`; o retry idempotente, o conflito de capability e a
-  outbox foram exercitados no servidor PostgreSQL real.
-- O driver integrou lotes sequenciais de 50, 100 e 500, pela Landing Page,
-  FastAPI, webhook e workflows reais no n8n `1.123.21`, com PostgreSQL 16 e
-  APIs HTTP simuladas. Os lotes de 50 e 100 foram aceitos. O runner falhou no
-  lote de 500 após receber respostas `502`; portanto, não se considera
-  homologada a recepção HTTP integral de 500 solicitações.
-- Apesar dos `502`, o PostgreSQL registrou 650 solicitações únicas, com 650
-  chaves idempotentes distintas. Ao encerrar o processamento, 623 ficaram
-  `done`, 20 em `manual_review` e 7 em `submission_uncertain`. Os últimos
-  dois grupos não foram reenviados automaticamente. Não houve linhas com
-  custo real: o custo simulado foi zero.
-- Nos logs do proxy acumulados durante as tentativas e verificações seguintes
-  foram observadas respostas `202` e `502` (incluindo retries e quatro
-  solicitações de diagnóstico posteriores); esses totais não são uma taxa
-  por lote. A falha do runner prova que o requisito de sucesso HTTP para 500
-  não foi satisfeito. Sob a carga, uma amostra observada do n8n chegou a
-  aproximadamente 89% de CPU e 1,42 GiB de memória; não é uma medição de
-  pico contínua nem representa o Easypanel. A hipótese provável é pressão
-  de recursos/latência no caminho webhook, mas a causa exata de cada `502`
-  não foi isolada.
-- O mock registrou 623 chamadas `task_post` no intervalo da carga (lotes de
-  nove itens, nunca DataForSEO real); 7 pedidos ficaram em estado de submissão
-  incerta e não devem ser reenviados sem reconciliação. Os registros
-  `manual_review` não devem originar chamadas pagas.
-- O banco de homologação terminou com 3.850 eventos da outbox marcados
-  `delivered`; o adaptador/CRM era exclusivamente simulado. Isso comprova o
-  processamento da outbox para os pedidos efetivamente resolvidos, não
-  entrega a um CRM real.
-- Os testes de status, relatório protegido, isolamento entre tenants, bearer
-  inválido, nove pontos e `40102 No Search Results` passaram no smoke
-  integrado anterior. O n8n e os serviços foram reiniciados posteriormente,
-  mas o teste dedicado interrompido com tarefas ainda pendentes não concluiu;
-  recuperação end-to-end após reinicialização continua não homologada.
-- A inspeção dos logs do n8n não encontrou os marcadores de credenciais
-  fictícias nem capabilities do teste. O teste não prova ausência de qualquer
-  dado sensível em toda configuração ou versão futura.
-- A suíte completa mais recente: `204 passed`, um aviso de depreciação do
-  `httpx` no `TestClient`. Nenhuma chamada DataForSEO, Google Places ou T2S
-  real, credencial real, publicação, commit ou push foi realizada.
+Com concorrência n8n 20 e timeout de 30 s ainda ocorreram respostas retryable
+sob 500 solicitações. A configuração isolada final usou n8n
+`N8N_CONCURRENCY_PRODUCTION_LIMIT=50` e timeout do backend de 60 s. Nessa
+configuração, o runner recebeu `202` em todas as submissões, sem `502` ou
+`503`. Isso é uma configuração comprovada para este container, não uma
+garantia de capacidade no Easypanel.
+
+### Carga integrada final
+
+- Serviços exercitados sem substituir o n8n: Landing Page, proxy Nginx,
+  FastAPI, seis workflows n8n `1.123.21`, PostgreSQL `16-alpine`, simuladores
+  HTTP de DataForSEO/Places/CRM e integração externa do Smart Grid.
+- Lotes progressivos: 50 com concorrência 10, 100 com concorrência 25 e 500
+  com concorrência 50. Os 650 pedidos dos lotes e um caso especial
+  `No Search Results` receberam HTTP `202`; houve três retries de duplicação
+  explícitos, também aceitos como duplicados. Total observado: 654 respostas
+  `202`, zero `502`/`503`, 651 solicitações únicas e zero linhas duplicadas.
+- Latência de recepção (média / p95 / máximo): 50 — 1,86 / 2,52 / 2,59 s;
+  100 — 3,70 / 4,41 / 4,59 s; 500 — 9,30 / 12,86 / 13,84 s. O lote de 500
+  levou 100,22 s para receber todas as respostas. Tempos de processamento:
+  45,57 s, 90,97 s e 435,69 s, respectivamente.
+- Estados de processamento: lote 50 — 50 `done`; lote 100 — 98 `done`,
+  1 `manual_review`, 1 `submission_uncertain`; lote 500 — 446 `done`,
+  33 `manual_review`, 21 `submission_uncertain`. No conjunto (incluindo o
+  caso especial), 595 ficaram `done`, 34 em revisão manual e 22 em
+  reconciliação. Revisão manual não submeteu tarefas DataForSEO. Submissões
+  incertas não podem ser reenviadas automaticamente.
+- O mock registrou 595 chamadas `task_post`, 5.355 consultas `task_get`, 617
+  respostas válidas do Places e 3.760 eventos CRM. Os 5.355 IDs DataForSEO
+  salvos eram únicos e associados a tarefas persistidas; 0 IDs duplicados,
+  0 custo simulado e 0 custo real. O CRM foi exclusivamente simulado.
+- Status/relatório protegido, isolamento entre tenants, rejeição de bearer
+  inválido, nove pontos por grade e `40102 No Search Results` em todos os nove
+  pontos passaram.
+- Limitação observada: 34 pedidos foram direcionados a `manual_review` com
+  mensagem genérica de verificação de empresa/localização; a causa específica
+  dessa ramificação não foi isolada. Além disso, 22 pedidos ficaram
+  `submission_uncertain`, estado que requer reconciliação manual. Ambos devem
+  ser revisados antes de ativar tráfego real.
+
+### Recuperação após reinicialização
+
+Em uma rodada separada, n8n e Smart Grid foram reiniciados com solicitações
+pendentes e IDs simulados já persistidos. Ambos voltaram a ficar saudáveis; o
+polling aumentou de 2.874 para 3.183 consultas e os pedidos `done` de 299 para
+334 após a retomada. Os IDs permaneceram únicos; o aumento de `task_post`
+correspondeu à continuação de novos pedidos da fila, não ao reenvio dos IDs
+persistidos. Tarefas ainda em estado de submissão durante a interrupção foram
+marcadas para reconciliação e não foram reenviadas automaticamente. Volumes
+foram preservados.
+
+### Capacidade, validações e limitações
+
+- Na amostragem de dois segundos durante a carga final, o container n8n chegou
+  a 173,95% de CPU e 1.767 MiB de memória. São picos desta máquina (7,76 GiB
+  visíveis ao Docker), não um sizing certificado para produção.
+- A suíte completa terminou com `206 passed`, 0 falhas e 1 aviso de
+  depreciação do `httpx` usado pelo `TestClient`.
+- A rede Compose era `internal: true`, todas as chamadas externas foram para
+  simuladores e nenhum secret real foi configurado. A integração T2S real,
+  reconciliação de submissões ambíguas em provedor real e dimensionamento no
+  Easypanel continuam pendentes.
+- Uma rodada histórica anterior registrou 650 pedidos: 623 `done`,
+  20 `manual_review` e 7 `submission_uncertain`, mas falhou na recepção HTTP
+  por `502`. Esses números são evidência histórica e não devem ser somados aos
+  resultados da carga final.
+
+Nenhuma chamada DataForSEO, Google Places ou CRM real, credencial real,
+publicação, commit ou push foi realizada.
 
 Não foi habilitada nem utilizada credencial real de DataForSEO, Google Places
 ou Smart Grid. Chamadas `task_post` foram feitas somente contra o simulador
@@ -603,13 +636,15 @@ os limites dos recursos do host compartilhado.
 | Componente | Mínimo inicial | Recomendado | Persistência/observabilidade |
 |---|---:|---:|---|
 | PostgreSQL da fila | 1 vCPU, 1 GB RAM | 2 vCPU, 2 GB RAM | Volume 10 GB+; backup lógico diário e backup do volume |
-| n8n | 1 vCPU, 1 GB RAM | 2 vCPU, 2 GB RAM | Volume do banco interno e `/home/node/.n8n`; logs sanitizados |
+| n8n | 2 vCPU, 2 GB RAM | 4 vCPU, 4 GB RAM para a configuração testada com 50 execuções concorrentes | Volume do banco interno e `/home/node/.n8n`; logs sanitizados |
 | Smart Grid | conforme carga atual | reservar margem para 500 leads simultâneos | SQLite atual em volume persistente |
 
 O PostgreSQL precisa de `max_connections` suficiente para o node n8n e
 execuções concorrentes, mas sem exceder memória. Configure inicialmente 50
-conexões e revise o pool do node. Para o n8n, limite global de concorrência
-apenas após medir o ambiente, pois afeta todos os workflows do servidor.
+conexões e revise o pool do node. O limite n8n de 50 foi necessário para a
+carga de 500 nesta homologação, mas elevou o pico do container a cerca de
+1,74 vCPU e 1,73 GiB; aplique somente após medir CPU e memória do host, pois
+afeta todos os workflows do servidor.
 Habilite `N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true` no homologador.
 
 Descarte logs temporários e mantenha volume dedicado para o PostgreSQL.

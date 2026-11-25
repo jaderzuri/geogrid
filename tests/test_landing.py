@@ -1,5 +1,6 @@
 import uuid
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,10 +19,11 @@ class MockN8nResponse:
 
 class MockN8nClient:
     calls = []
+    timeouts = []
     response_factory = None
 
-    def __init__(self, **_kwargs):
-        pass
+    def __init__(self, **kwargs):
+        type(self).timeouts.append(kwargs["timeout"])
 
     async def __aenter__(self):
         return self
@@ -53,6 +55,7 @@ def _configure(monkeypatch, tmp_path):
     monkeypatch.setenv("ZURI_REPORT_RATE_LIMIT", "1000")
     monkeypatch.setattr(landing.httpx, "AsyncClient", MockN8nClient)
     MockN8nClient.calls = []
+    MockN8nClient.timeouts = []
     MockN8nClient.response_factory = lambda url, payload: MockN8nResponse(
         {
             "accepted": True,
@@ -188,6 +191,34 @@ def test_lead_service_failures_are_sanitized(client):
     response = client.post("/api/landing/leads", json=_payload())
     assert response.status_code == 503
     assert "sensitive" not in response.text
+
+
+def test_lead_webhook_timeout_returns_retryable_503(client):
+    def timeout_response(_url, _payload):
+        raise httpx.ReadTimeout("simulated webhook timeout")
+
+    MockN8nClient.response_factory = timeout_response
+
+    response = client.post("/api/landing/leads", json=_payload())
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Integration service timed out; retry the same request"
+    )
+    assert MockN8nClient.timeouts[0].read == 30
+
+
+def test_landing_n8n_timeout_is_configurable_and_bounded(client, monkeypatch):
+    monkeypatch.setenv("ZURI_N8N_TIMEOUT_SECONDS", "45")
+    response = client.post("/api/landing/leads", json=_payload())
+
+    assert response.status_code == 202
+    assert MockN8nClient.timeouts[-1].read == 45
+
+    monkeypatch.setenv("ZURI_N8N_TIMEOUT_SECONDS", "121")
+    invalid = client.post("/api/landing/leads", json=_payload())
+    assert invalid.status_code == 503
+    assert "misconfigured" in invalid.json()["detail"]
 
 
 def test_status_and_report_capabilities_are_sent_in_post_body_not_url(client):

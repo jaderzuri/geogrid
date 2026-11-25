@@ -15,14 +15,24 @@
 ## Estado e retomada
 
 Consulte `SESSION_HANDOFF.md`, `PROGRESS.md`, `TASKS.md` e `ROADMAP.md` antes de
-retomar. A regressão mais recente teve 204 testes aprovados. A homologação de
-500 pedidos não passou: respostas HTTP 502 coexistiram com 650 solicitações
-persistidas (623 concluídas, 20 revisão manual, 7 submissões incertas).
-Recuperação após restart com tarefa pendente ainda precisa de prova.
+retomar. A regressão mais recente teve 206 testes aprovados (um aviso conhecido
+de depreciação do `httpx` no `TestClient`). A homologação integrada em ambiente
+isolado passou nos lotes HTTP de 50/100/500 e no teste de restart com tarefas
+pendentes. A configuração verificada usou n8n 1.123.21, concorrência 50 e
+`ZURI_N8N_TIMEOUT_SECONDS=60`; não presumir a mesma capacidade no Easypanel.
 
-Prioridade seguinte: investigar os 502, testar resposta idempotente e concluir
-homologação progressiva/restart. Smart Leads Intelligence é futuro, não iniciado
-nem autorizado neste momento. Não iniciar novas funcionalidades sem pedido.
+A causa original dos `502` foi o timeout fixo de 8 s no webhook da Landing Page.
+O backend agora configura o timeout e devolve `503` retryable em falhas de
+transporte, sempre repetindo com a mesma chave idempotente. A rodada final
+registrou 651 requests únicos: 595 `done`, 34 `manual_review` e
+22 `submission_uncertain`; os casos incertos não podem ser reenviados
+automaticamente. A causa específica da revisão manual e a reconciliação dos
+incertos seguem como riscos operacionais.
+
+Antes de qualquer publicação, revisar esses casos, sizing/monitoramento no
+Easypanel e os contratos oficiais do CRM T2S. Smart Leads Intelligence é
+futuro, não iniciado nem autorizado. Não iniciar funcionalidades, commit,
+push, merge ou deploy sem autorização explícita.
 
 ## Segurança e operações
 

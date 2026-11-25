@@ -62,7 +62,7 @@ services:
       N8N_PAYLOAD_SIZE_MAX: "1"
       N8N_LOG_OUTPUT: console
       N8N_METRICS: "true"
-      N8N_CONCURRENCY_PRODUCTION_LIMIT: "20"
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: "50"
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
       EXECUTIONS_DATA_SAVE_ON_ERROR: none
       EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
@@ -134,6 +134,7 @@ services:
       ZURI_N8N_STATUS_WEBHOOK_URL: http://n8n:5678/webhook/zuri-smart-grid/status
       ZURI_N8N_REPORT_WEBHOOK_URL: http://n8n:5678/webhook/zuri-smart-grid/report
       ZURI_N8N_INTERNAL_HTTP_HOSTS: "n8n,mock-services,crm-adapter"
+      ZURI_N8N_TIMEOUT_SECONDS: "60"
       ZURI_CAMPAIGN_ID: homolog-event
       ZURI_ALLOWED_CAMPAIGNS: homolog-event
       ZURI_PRIVACY_POLICY_URL: https://privacy.invalid/homolog-v1
