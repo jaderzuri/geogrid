@@ -93,6 +93,8 @@ class MockHandler(BaseHTTPRequestHandler):
             self._task_post(body)
         elif path.startswith("/v3/serp/google/maps/task_get/advanced/"):
             self._task_get(unquote(path.rsplit("/", 1)[-1]))
+        elif path == "/v1/places:searchText":
+            self._place_search(body)
         elif path.startswith("/v1/places/"):
             self._place_details(unquote(path.rsplit("/", 1)[-1]))
         elif path == "/internal/events":
@@ -249,6 +251,65 @@ class MockHandler(BaseHTTPRequestHandler):
             },
         )
 
+    def _place_search(self, body: dict | list) -> None:
+        expected_key = os.environ["MOCK_PLACES_API_KEY"]
+        if self.headers.get("X-Goog-Api-Key") != expected_key:
+            _json_response(self, 403, {"error": {"status": "PERMISSION_DENIED"}})
+            return
+        if not isinstance(body, dict) or not isinstance(body.get("textQuery"), str):
+            _json_response(self, 400, {"error": {"status": "INVALID_ARGUMENT"}})
+            return
+        with _lock:
+            _counts["places"] += 1
+        if any(
+            marker in body["textQuery"].casefold()
+            for marker in ("inexistente", "não encontrada", "nao encontrada")
+        ):
+            _json_response(self, 200, {"places": []})
+            return
+        _json_response(
+            self,
+            200,
+            {
+                "places": [
+                    self._mock_place("ChIJZuriHomolog"),
+                    self._mock_place("ChIJZuriBranchMock"),
+                ]
+            },
+        )
+
+    @staticmethod
+    def _mock_place(place_id: str) -> dict:
+        branch = place_id == "ChIJZuriBranchMock"
+        address = (
+            "Rua Fictícia, 200, São Paulo - SP, Brasil"
+            if branch
+            else "Rua Fictícia, 100, São Paulo - SP, Brasil"
+        )
+        return {
+            "id": place_id,
+            "displayName": {"text": "ZURI Homologação"},
+            "formattedAddress": address,
+            "addressComponents": [
+                {
+                    "longText": "São Paulo",
+                    "shortText": "São Paulo",
+                    "types": ["locality"],
+                },
+                {
+                    "longText": "São Paulo",
+                    "shortText": "SP",
+                    "types": ["administrative_area_level_1"],
+                },
+            ],
+            "location": {
+                "latitude": -23.55 if not branch else -23.56,
+                "longitude": -46.63 if not branch else -46.64,
+            },
+            "primaryTypeDisplayName": {"text": "Serviços locais"},
+            "googleMapsUri": f"https://maps.google.com/?q={place_id}",
+        }
+
     def _place_details(self, place_id: str) -> None:
         expected_key = os.environ["MOCK_PLACES_API_KEY"]
         if self.headers.get("X-Goog-Api-Key") != expected_key:
@@ -259,17 +320,7 @@ class MockHandler(BaseHTTPRequestHandler):
             return
         with _lock:
             _counts["places"] += 1
-        _json_response(
-            self,
-            200,
-            {
-                "id": place_id,
-                "displayName": {"text": "ZURI Homologação"},
-                "location": {"latitude": -23.55, "longitude": -46.63},
-                "formattedAddress": "São Paulo, SP, Brasil",
-                "primaryTypeDisplayName": {"text": "Serviços locais"},
-            },
-        )
+        _json_response(self, 200, self._mock_place(place_id))
 
     def _crm_event(self, body: dict | list) -> None:
         if self.headers.get("Authorization") != f"Bearer {os.environ['MOCK_CRM_TOKEN']}":

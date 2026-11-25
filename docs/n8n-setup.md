@@ -98,6 +98,7 @@ editor antes de ativar; não instale community nodes para esta integração.
    - `workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql`
    - `workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql`
    - `workflows/n8n/sql/007-processor-error-observability.sql`
+   - `workflows/n8n/sql/008-safe-retries-and-paid-response-journal.sql`
 
 O arquivo 005 de `tests/integration` configura orçamento somente para
 homologação e não é uma migração de produção. Antes de atualizar uma fila
@@ -720,7 +721,7 @@ submissões incertas, erros de callback, espaço em disco e tamanho dos logs.
 1. Preservar e registrar o SQLite atual e todos os backups.
 2. Criar um banco PostgreSQL novo em `geogrid_queue`; não apontar para banco
    interno do n8n nem para o SQLite.
-3. Aplicar as migrations 001–004, 006 e 007 em ordem em homologação; executar
+3. Aplicar as migrations 001–004 e 006–008 em ordem em homologação; executar
    em produção somente após aprovação, backup validado e parada dos workers.
 4. Criar usuário PostgreSQL exclusivo com apenas os privilégios necessários.
 5. Configurar credenciais reais no secret manager/n8n; não importar secrets nos
@@ -735,6 +736,10 @@ submissões incertas, erros de callback, espaço em disco e tamanho dos logs.
 12. Ativar 01 primeiro, depois 02/03, 04/05 e por último 06 após configurar
     e homologar o adaptador CRM.
 13. Monitorar os primeiros eventos e manter rollback disponível.
+
+Para a decisão de prontidão, gates, estimativa de custo, limites iniciais e
+procedimentos de publicação/rollback, consulte
+[`docs/easypanel-commercial-readiness.md`](./easypanel-commercial-readiness.md).
 
 ### Checklist de rollback
 

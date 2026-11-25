@@ -2,6 +2,46 @@
 
 Data: 2026-11-25
 
+## Homologação Express isolada — resultado consolidado
+
+- Retomada da branch `feature/dataforseo-standard-normal`, HEAD `e9fb195`.
+  Alterações não rastreadas anteriores foram preservadas: três backups `.bak`
+  e `instalar_ida_adaptativo.py`. A homologação também mantém seu override local
+  não rastreado; esses arquivos não fazem parte do checkpoint.
+- A stack temporária usou PostgreSQL, n8n 1.123.21, Smart Grid e mocks somente
+  em rede Docker interna. Busca ambígua, confirmação explícita, lead, Express,
+  fila, relatório protegido, painel/CSV e Professional assistido passaram.
+  Cobertura observada: 9/9 pontos. O caminho sem resultados aceitou lead
+  assistido e não criou diagnóstico.
+- Repetição idempotente não duplicou a submissão: PostgreSQL registrou 1
+  solicitação, 1 chave idempotente e 9 tarefas únicas/concluídas. Mock metrics:
+  1 `task_post`, 9 `task_get`, 3 chamadas Places e 7 eventos para o mock CRM.
+  Custo persistido: US$ 0.00. Nenhuma mensagem, consulta paga real ou chamada
+  externa ocorreu; eventos CRM não saíram do simulador.
+- O teste CSV do fluxo Standard Normal incluiu um registro comercial fictício
+  retornado pelo mock DataForSEO para exercitar o painel. Não compartilhar o
+  CSV de homologação. O teste específico do modo explicitamente `synthetic`
+  continua assegurando que registros sintéticos não são elegíveis a exportação;
+  leads sem marketing consentido não foram exportados.
+- `docs/easypanel-commercial-readiness.md` reúne checklist, variáveis, gates,
+  limites, estimativa de custo, bloqueios e procedimentos. Corrigida também a
+  lista de migrações em `docs/n8n-setup.md` para incluir 008.
+- Validação final: regressão completa **253 passed**, com o aviso conhecido
+  Starlette/httpx; Compose isolado passou `config -q`, mock Python sem erros de
+  sintaxe e `git diff --check` sem erros.
+- A stack foi parada com `docker compose stop`; os volumes exclusivos
+  `geogrid-commercial-homolog-{postgres-state,smart-grid-state,n8n-state,mock-certs}-20261125`
+  permanecem preservados. Não foi usado `down -v` nem houve remoção de volume.
+- O checkpoint local desta rodada contém somente `SESSION_HANDOFF.md`,
+  `docs/n8n-setup.md`, `docs/easypanel-commercial-readiness.md` e
+  `tests/integration/mock_services.py`. O override local, três backups `.bak`
+  e `instalar_ida_adaptativo.py` foram preservados fora do checkpoint. Sem
+  deploy, publicação, push, merge ou ativação real.
+- Estimativa não vinculante: US$ 0.0054 de tarifa SERP para nove tarefas a
+  US$ 0.0006/página; Places, taxas e variações não estão incluídos. Não é teto
+  de custo. Não fazer consulta paga até receber autorização explícita e
+  reconfirmar orçamento/limites.
+
 ## Sprint de lançamento — checkpoint local concluído
 
 - Branch `feature/dataforseo-standard-normal`; checkpoint local
