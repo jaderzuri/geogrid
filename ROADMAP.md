@@ -83,7 +83,7 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 - Suíte: 206 testes aprovados. Resultado detalhado e métricas em
   `docs/n8n-setup.md` e `PROGRESS.md`.
 
-### Próximas atividades autorizadas
+### Pacotes autorizados e bloqueios
 
 - **P01:** autorização única, reservas e custos foram validados com PostgreSQL
   e n8n isolados; checkpoint `6fc53a142cbe0cb0edceed83a097e96853d8f2da`
@@ -95,9 +95,20 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
   `Retry-After`, agenda persistente e journal durável recuperam respostas
   recebidas sem repetir `task_post`; resposta perdida antes do journal continua
   em reconciliação manual. Checkpoint local autorizado, sem push.
-- **P04 Smart Business Finder:** próximo pacote autorizado; implementar busca
-  backend, classificação de candidatos e confirmação explícita. A interface
-  visual continua reservada ao P06.
+- **P04 Smart Business Finder:** backend implementado localmente com busca
+  configurável, classificação, confirmação explícita, limites persistentes e
+  gates de proveniência. Testes focados simulados: 25 aprovados; regressão
+  completa: 236 aprovados. Nenhuma busca real foi executada. A interface visual
+  continua reservada ao P06.
+- **P04.1 — compatibilidade e licenciamento:** bloqueio obrigatório antes de
+  habilitar o fluxo em produção ou publicar a Landing Page 2.0. Validar com
+  revisão legal/operacional o provedor, direitos de uso, retenção, atribuição,
+  quotas e integração com o scanner. O Google Places não pode fornecer
+  coordenadas para a análise espacial da grade; Place IDs são a exceção de
+  armazenamento documentada. A integração OSM permanece desabilitada até a
+  aceitação explícita da ODbL e prontidão de atribuição, e exige uma instância
+  própria para o scanner. Não ativar fornecedor comercial sem contratação e
+  revisão de termos.
 - Se a resposta HTTP não puder ser persistida nem recuperada, os IDs exigem
   reconciliação manual; manter a submissão incerta, sem reenvio automático.
   A garantia universal de chamada única entre banco e serviço externo não foi

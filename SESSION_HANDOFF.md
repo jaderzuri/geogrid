@@ -2,7 +2,34 @@
 
 Data: 2026-11-25
 
-## P03 — concluído; P04 autorizado
+## P04 — implementação local e validação
+
+- Branch continua `feature/dataforseo-standard-normal`; HEAD local esperado
+  `790bcb5` (P03), sem commit P04. Alterações preexistentes e não relacionadas
+  — três backups `.bak` e `instalar_ida_adaptativo.py` — foram preservadas e
+  não devem entrar em checkpoint.
+- Implementados `app/business_finder.py`, alterações aditivas em `app/db.py`,
+  registro/políticas de resposta em `app/main.py` e testes
+  `tests/test_business_finder.py`.
+- Testes focados simulados: **25 aprovados**; regressão Python completa:
+  **236 aprovados**, zero falhas, um aviso conhecido de depreciação
+  Starlette/httpx. Pylance sem diagnósticos nos módulos de produção e testes
+  alterados.
+- Busca/provedores reais não foram chamados. Limite diário padrão zero.
+  Google Places não pode alimentar coordenadas para análise ponto-em-polígono;
+  os dados de busca permanecem transitórios, exceto Place ID. OSM só libera
+  armazenamento com `GEOGRID_OSM_ODBL_STORAGE_ACCEPTED=true` e
+  `GEOGRID_OSM_ATTRIBUTION_READY=true`; scanner exige instância configurada
+  própria. O endpoint público Nominatim é bloqueado.
+- P04.1 — compatibilidade de licença, retenção, atribuição, quotas e scanner —
+  é obrigatório antes de habilitar ou publicar P06. Nenhum provedor comercial
+  foi contratado/ativado.
+- Próximos passos: repetir os testes focados após a limpeza dos avisos Pylance,
+  inspecionar `git diff --check`/diff e revisar o conjunto final de arquivos.
+  Não iniciar P05/P06; nenhum push, merge, deploy,
+  chamada paga, alteração de produção ou exclusão está autorizado.
+
+## P03 — concluído; P04 autorizado anteriormente
 
 - Checkpoint P02 criado localmente: `4ccc300`; nenhum push realizado. Os 22
   arquivos foram revisados e não incluem bancos, backups ou credenciais reais.

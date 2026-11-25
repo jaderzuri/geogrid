@@ -99,11 +99,467 @@ CREATE INDEX IF NOT EXISTS idx_points_scan ON points(scan_id);
 CREATE INDEX IF NOT EXISTS idx_scans_business ON scans(business_id, keyword);
 CREATE INDEX IF NOT EXISTS idx_external_business_client ON external_businesses(client_id, external_business_id);
 CREATE INDEX IF NOT EXISTS idx_external_scan_client ON external_scans(client_id, external_id);
+CREATE TABLE IF NOT EXISTS business_finder_daily_usage (
+    usage_date TEXT PRIMARY KEY,
+    query_count INTEGER NOT NULL CHECK (query_count >= 0)
+);
+CREATE TABLE IF NOT EXISTS business_finder_rate_buckets (
+    subject_hash TEXT NOT NULL,
+    bucket_start INTEGER NOT NULL,
+    request_count INTEGER NOT NULL CHECK (request_count >= 0),
+    PRIMARY KEY (subject_hash, bucket_start)
+);
+CREATE TABLE IF NOT EXISTS business_finder_confirmations (
+    nonce_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    request_id TEXT,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS business_finder_confirmation_requests (
+    request_id TEXT PRIMARY KEY,
+    input_hash TEXT NOT NULL,
+    confirmation_nonce_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS business_finder_searches (
+    request_id TEXT PRIMARY KEY,
+    query_hash TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('started', 'completed', 'uncertain')),
+    classification TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS business_finder_data_provenance (
+    business_id INTEGER NOT NULL REFERENCES businesses(id),
+    field_name TEXT NOT NULL,
+    data_origin TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    license_name TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    valid_until TEXT,
+    storage_authorized INTEGER NOT NULL CHECK (storage_authorized IN (0, 1)),
+    attribution TEXT,
+    PRIMARY KEY (business_id, field_name, data_origin, provider_id)
+);
+CREATE TABLE IF NOT EXISTS business_finder_provider_refs (
+    business_id INTEGER NOT NULL REFERENCES businesses(id),
+    provider_id TEXT NOT NULL,
+    provider_reference_id TEXT NOT NULL,
+    license_name TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    valid_until TEXT,
+    storage_authorized INTEGER NOT NULL CHECK (storage_authorized IN (0, 1)),
+    attribution TEXT,
+    PRIMARY KEY (business_id, provider_id, provider_reference_id)
+);
+CREATE TABLE IF NOT EXISTS business_finder_diagnostics (
+    request_id TEXT PRIMARY KEY,
+    request_hash TEXT NOT NULL,
+    scan_ids TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+class BusinessFinderRateLimitError(Exception):
+    """The caller exceeded the configured business-finder request rate."""
+
+
+class BusinessFinderBudgetLimitError(Exception):
+    """The configured daily business-finder query allowance is exhausted."""
+
+
+class BusinessFinderDuplicateRequestError(Exception):
+    """A search request ID has already reserved a provider query."""
+
+    def __init__(self, status: str):
+        self.status = status
+
+
+class BusinessFinderRequestConflictError(Exception):
+    """A request ID was reused with different search details."""
+
+
+class BusinessFinderConfirmationError(Exception):
+    """A confirmation token is absent, expired, or already consumed."""
+
+
+class BusinessFinderConfirmationConflictError(Exception):
+    """A confirmation request ID was reused for a different candidate."""
+
+
+class BusinessFinderDiagnosticConflictError(Exception):
+    """A diagnostic request ID conflicts with a prior request."""
+
+
+def begin_business_finder_search(
+    request_id: str,
+    query_hash: str,
+    provider_id: str,
+    subject_hash: str,
+    usage_date: str,
+    bucket_start: int,
+    rate_limit: int,
+    daily_limit: int,
+    global_subject_hash: str | None = None,
+    global_bucket_start: int | None = None,
+    global_rate_limit: int | None = None,
+) -> None:
+    """Reserve limits and a unique request ID before contacting a provider."""
+    with connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        c.execute(
+            "DELETE FROM business_finder_confirmations WHERE expires_at < ?",
+            (int(datetime.now(timezone.utc).timestamp()),),
+        )
+        c.execute(
+            "DELETE FROM business_finder_confirmation_requests WHERE expires_at < ?",
+            (int(datetime.now(timezone.utc).timestamp()),),
+        )
+        existing = c.execute(
+            "SELECT query_hash, status FROM business_finder_searches WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if existing:
+            if existing["query_hash"] != query_hash:
+                raise BusinessFinderRequestConflictError
+            raise BusinessFinderDuplicateRequestError(existing["status"])
+
+        daily = c.execute(
+            "SELECT query_count FROM business_finder_daily_usage WHERE usage_date = ?",
+            (usage_date,),
+        ).fetchone()
+        if daily_limit <= 0 or (daily and daily["query_count"] >= daily_limit):
+            raise BusinessFinderBudgetLimitError
+
+        rate_keys = [(subject_hash, bucket_start, rate_limit)]
+        if (
+            global_subject_hash is not None
+            and global_bucket_start is not None
+            and global_rate_limit is not None
+        ):
+            rate_keys.append(
+                (global_subject_hash, global_bucket_start, global_rate_limit)
+            )
+        for key, start, limit in rate_keys:
+            rate = c.execute(
+                "SELECT request_count FROM business_finder_rate_buckets "
+                "WHERE subject_hash = ? AND bucket_start = ?",
+                (key, start),
+            ).fetchone()
+            if limit <= 0 or (rate and rate["request_count"] >= limit):
+                raise BusinessFinderRateLimitError
+
+        created = now()
+        c.execute(
+            "INSERT INTO business_finder_searches "
+            "(request_id, query_hash, provider_id, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, 'started', ?, ?)",
+            (request_id, query_hash, provider_id, created, created),
+        )
+        c.execute(
+            "INSERT INTO business_finder_daily_usage(usage_date, query_count) VALUES (?, 1) "
+            "ON CONFLICT(usage_date) DO UPDATE SET query_count = query_count + 1",
+            (usage_date,),
+        )
+        for key, start, _ in rate_keys:
+            c.execute(
+                "INSERT INTO business_finder_rate_buckets"
+                "(subject_hash, bucket_start, request_count) VALUES (?, ?, 1) "
+                "ON CONFLICT(subject_hash, bucket_start) "
+                "DO UPDATE SET request_count = request_count + 1",
+                (key, start),
+            )
+        c.execute(
+            "DELETE FROM business_finder_rate_buckets WHERE bucket_start < ?",
+            (bucket_start - 86400,),
+        )
+
+
+def finish_business_finder_search(
+    request_id: str,
+    classification: str,
+    *,
+    uncertain: bool = False,
+) -> None:
+    with connect() as c:
+        c.execute(
+            "UPDATE business_finder_searches SET status=?, classification=?, updated_at=? "
+            "WHERE request_id=? AND status='started'",
+            ("uncertain" if uncertain else "completed", classification, now(), request_id),
+        )
+
+
+def create_business_finder_confirmation(nonce_hash: str, expires_at: int) -> None:
+    with connect() as c:
+        c.execute(
+            "DELETE FROM business_finder_confirmations WHERE expires_at < ?",
+            (int(datetime.now(timezone.utc).timestamp()),),
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO business_finder_confirmations"
+            "(nonce_hash, expires_at, created_at) VALUES (?, ?, ?)",
+            (nonce_hash, expires_at, now()),
+        )
+
+
+def confirm_business_finder_candidate(
+    candidate_nonce_hash: str,
+    request_id: str,
+    input_hash: str,
+    confirmation_nonce_hash: str,
+    expires_at: int,
+    current_time: int,
+) -> None:
+    """Confirm a candidate once and make the result retryable by request ID."""
+    with connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        previous = c.execute(
+            "SELECT input_hash FROM business_finder_confirmation_requests "
+            "WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if previous:
+            if previous["input_hash"] != input_hash:
+                raise BusinessFinderConfirmationConflictError
+            return
+
+        candidate = c.execute(
+            "SELECT expires_at, request_id FROM business_finder_confirmations "
+            "WHERE nonce_hash = ?",
+            (candidate_nonce_hash,),
+        ).fetchone()
+        if (
+            not candidate
+            or candidate["expires_at"] < current_time
+            or (
+                candidate["request_id"] is not None
+                and candidate["request_id"] != request_id
+            )
+        ):
+            raise BusinessFinderConfirmationError
+        if candidate["request_id"] is None:
+            c.execute(
+                "UPDATE business_finder_confirmations SET request_id=?, consumed_at=? "
+                "WHERE nonce_hash=? AND request_id IS NULL",
+                (request_id, now(), candidate_nonce_hash),
+            )
+            if c.execute("SELECT changes()").fetchone()[0] != 1:
+                raise BusinessFinderConfirmationError
+        c.execute(
+            "INSERT INTO business_finder_confirmation_requests "
+            "(request_id, input_hash, confirmation_nonce_hash, expires_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (request_id, input_hash, confirmation_nonce_hash, expires_at, now()),
+        )
+        c.execute(
+            "INSERT OR IGNORE INTO business_finder_confirmations "
+            "(nonce_hash, expires_at, created_at) VALUES (?, ?, ?)",
+            (confirmation_nonce_hash, expires_at, now()),
+        )
+
+
+def create_business_finder_diagnostic(
+    request_id: str,
+    request_hash: str,
+    confirmation_nonce_hash: str,
+    current_time: int,
+    business: dict,
+    keywords: list[str],
+    grid_size: int,
+    spacing_km: float,
+    provenance: list[dict],
+) -> dict:
+    """Atomically consume confirmation, persist authorized provenance, and queue scans."""
+    from .grid import make_grid, validate_grid
+
+    validate_grid(grid_size, spacing_km)
+    if not keywords or len(keywords) > 10:
+        raise ValueError("one to ten keywords are required")
+
+    with connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        prior = c.execute(
+            "SELECT request_hash, scan_ids FROM business_finder_diagnostics "
+            "WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if prior:
+            if prior["request_hash"] != request_hash:
+                raise BusinessFinderDiagnosticConflictError
+            return {
+                "scan_ids": json.loads(prior["scan_ids"]),
+                "created_new": False,
+            }
+
+        confirmation = c.execute(
+            "SELECT expires_at, request_id FROM business_finder_confirmations "
+            "WHERE nonce_hash = ?",
+            (confirmation_nonce_hash,),
+        ).fetchone()
+        if (
+            not confirmation
+            or confirmation["expires_at"] < current_time
+            or confirmation["request_id"] is not None
+        ):
+            raise BusinessFinderConfirmationError
+
+        name = business["name"]
+        place_id = business.get("place_id")
+        existing = None
+        if place_id:
+            rows = c.execute(
+                "SELECT * FROM businesses WHERE place_id = ?",
+                (place_id,),
+            ).fetchall()
+            matching = [
+                row for row in rows
+                if row["name"] == name
+                and abs(row["lat"] - business["lat"]) <= 0.000001
+                and abs(row["lng"] - business["lng"]) <= 0.000001
+            ]
+            if len(rows) > 1 and len(matching) != 1:
+                raise BusinessFinderDiagnosticConflictError
+            if rows and not matching:
+                raise BusinessFinderDiagnosticConflictError
+            existing = matching[0] if matching else None
+
+        if existing:
+            business_id = existing["id"]
+        else:
+            cursor = c.execute(
+                "INSERT INTO businesses "
+                "(name, cid, place_id, lat, lng, address, category, created) "
+                "VALUES (?, NULL, ?, ?, ?, ?, NULL, ?)",
+                (
+                    name,
+                    place_id,
+                    business["lat"],
+                    business["lng"],
+                    business.get("address"),
+                    now(),
+                ),
+            )
+            business_id = cursor.lastrowid
+
+        scan_ids: list[int] = []
+        grid = make_grid(
+            business["lat"],
+            business["lng"],
+            grid_size,
+            spacing_km,
+        )
+        if any(
+            not -90 <= point.lat <= 90 or not -180 <= point.lng <= 180
+            for point in grid
+        ):
+            raise ValueError("business center cannot produce valid grid coordinates")
+
+        created = now()
+        for keyword in keywords:
+            cursor = c.execute(
+                "INSERT INTO scans "
+                "(business_id, keyword, grid_size, spacing_km, center_lat, center_lng, "
+                "status, progress, total, created, origin) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, 'business_finder')",
+                (
+                    business_id,
+                    keyword,
+                    grid_size,
+                    spacing_km,
+                    business["lat"],
+                    business["lng"],
+                    grid_size * grid_size,
+                    created,
+                ),
+            )
+            scan_id = cursor.lastrowid
+            scan_ids.append(scan_id)
+            for point in grid:
+                c.execute(
+                    "INSERT INTO points "
+                    "(scan_id, row, col, lat, lng, rank, status, results) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, 'pending', '[]')",
+                    (scan_id, point.row, point.col, point.lat, point.lng),
+                )
+
+        for item in provenance:
+            if not item["storage_authorized"]:
+                raise ValueError("unauthorized provider data cannot be persisted")
+            c.execute(
+                "INSERT OR IGNORE INTO business_finder_data_provenance "
+                "(business_id, field_name, data_origin, provider_id, license_name, "
+                "retrieved_at, valid_until, storage_authorized, attribution) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+                (
+                    business_id,
+                    item["field_name"],
+                    item["data_origin"],
+                    item["provider_id"],
+                    item["license_name"],
+                    item["retrieved_at"],
+                    item.get("valid_until"),
+                    item.get("attribution"),
+                ),
+            )
+
+        provider_reference_id = business.get("provider_reference_id")
+        if provider_reference_id:
+            if not business.get("provider_reference_storage_authorized"):
+                raise ValueError("provider reference is not authorized for storage")
+            c.execute(
+                "INSERT OR IGNORE INTO business_finder_provider_refs "
+                "(business_id, provider_id, provider_reference_id, license_name, "
+                "retrieved_at, valid_until, storage_authorized, attribution) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+                (
+                    business_id,
+                    business["provider_id"],
+                    provider_reference_id,
+                    business["license_name"],
+                    business["retrieved_at"],
+                    business.get("valid_until"),
+                    business.get("attribution"),
+                ),
+            )
+
+        c.execute(
+            "UPDATE business_finder_confirmations SET request_id=?, consumed_at=? "
+            "WHERE nonce_hash=? AND request_id IS NULL",
+            (request_id, now(), confirmation_nonce_hash),
+        )
+        if c.execute("SELECT changes()").fetchone()[0] != 1:
+            raise BusinessFinderConfirmationError
+        c.execute(
+            "INSERT INTO business_finder_diagnostics "
+            "(request_id, request_hash, scan_ids, created_at) VALUES (?, ?, ?, ?)",
+            (request_id, request_hash, json.dumps(scan_ids), created),
+        )
+        return {"scan_ids": scan_ids, "created_new": True}
+
+
+def get_business_finder_diagnostic(request_id: str) -> dict | None:
+    with connect() as c:
+        row = c.execute(
+            "SELECT request_hash, scan_ids FROM business_finder_diagnostics "
+            "WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        return (
+            {
+                "request_hash": row["request_hash"],
+                "scan_ids": json.loads(row["scan_ids"]),
+            }
+            if row
+            else None
+        )
 
 
 @contextmanager

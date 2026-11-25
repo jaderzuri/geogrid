@@ -2,6 +2,24 @@
 
 Alterações relevantes do Smart Grid by ZURI.
 
+## Não lançado — P04 Smart Business Finder (implementado localmente)
+
+- Adicionados endpoints backend de busca, confirmação explícita e início de
+  diagnóstico, com classificação de candidatos e validação de identidade e
+  localização. Nenhuma empresa é selecionada automaticamente.
+- Adicionados limites configuráveis e persistentes, ledger por request ID,
+  tokens assinados de curta duração, confirmação única/idempotente e
+  proveniência de campos. Consultas e dados brutos dos candidatos não são
+  persistidos.
+- O scanner falha fechado para fontes sem autorização de armazenamento
+  permanente de coordenadas. Google Places não alimenta a grade; OSM depende
+  de aceite ODbL, atribuição pronta e instância própria. A API pública
+  Nominatim fica bloqueada.
+- Testes focados simulados: 25 aprovados; regressão Python: 236 aprovados.
+  A busca real permanece desabilitada por padrão e não houve chamada paga.
+- P04.1 — revisão de compatibilidade/licenças/retenção/atribuição é prévia
+  obrigatória a qualquer habilitação em produção ou publicação do P06.
+
 ## Não lançado — P03 concluído localmente
 
 - Landing Page repete somente respostas HTTP 429/5xx e erros de transporte, com

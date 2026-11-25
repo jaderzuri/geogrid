@@ -29,12 +29,22 @@
 
 ## P04 — Smart Business Finder
 
-- [ ] Implementar busca backend sem seleção automática e sem chamadas pagas
+- [x] Implementar busca backend sem seleção automática e sem chamadas pagas
   durante testes.
-- [ ] Classificar localização, homônimos, filiais, divergência, dados
+- [x] Classificar localização, homônimos, filiais, divergência, dados
   insuficientes, limite e falhas técnicas.
-- [ ] Exigir confirmação explícita antes da autorização de diagnóstico; deixar
+- [x] Exigir confirmação explícita antes da autorização de diagnóstico; deixar
   a interface visual para P06.
+- [x] Persistir rate/budget limits, request IDs, uso único de confirmação e
+  proveniência sem armazenar consultas/candidatos brutos.
+- [x] Bloquear o scanner para Google Places e exigir aceite ODbL/atribuição para
+  permitir armazenamento de dados OSM.
+- [x] Testar providers simulados, autenticação/transporte, respostas inválidas,
+  ambiguidades, rate limit, confirmação, expiração e idempotência.
+- [ ] P04.1: revisão formal de licenças, retenção, atribuição e integração
+  geográfica antes de qualquer ativação/publicação.
+- [x] Executar regressão Python completa após as mudanças P04 e registrar o
+  resultado final.
 
 ## Homologação integrada — executada em 2026-11-25
 

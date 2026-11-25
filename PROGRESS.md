@@ -42,11 +42,33 @@
   anterior; os testes atuais também cobriram a recuperação do journal após
   falhas induzidas, mas não repetiram o ciclo de restart.
 
-## P04 — próximo
+## P04 — Smart Business Finder (implementado localmente)
 
-- Implementação autorizada do Smart Business Finder backend. Busca real
-  permanecerá desabilitada sem credencial configurada; testes usam simuladores.
-- Não alterar a interface visual da Landing Page; ela permanece no escopo P06.
+- Implementados os endpoints backend `POST /api/business-finder/search`,
+  `/confirm` e `/diagnostics`, sem alterações na interface visual da Landing
+  Page. A busca real requer provider/credenciais configurados; o limite diário
+  padrão é zero (fail-closed).
+- A busca classifica empresas encontradas, homônimos, divergências,
+  insuficiência de dados e ausência de candidatos. Falhas de transporte,
+  timeout, autenticação, rate limit e resposta inválida são separadas de
+  `BUSINESS_NOT_FOUND`; resultados não escolhem automaticamente a empresa.
+- A confirmação exige ação explícita e é de uso único/idempotente por
+  `request_id`; confirmação apenas de identidade não concede direito de
+  armazenamento. As tabelas SQLite são aditivas; limites e hashes persistem,
+  mas os dados brutos da consulta/candidato não são gravados.
+- Google Places é intencionalmente incompatível com o scanner: a política
+  proíbe alimentar análise ponto-em-polígono com suas coordenadas. Place ID
+  pode ser persistido; nomes/endereço/candidatos são transitórios. OSM exige
+  flags explícitas de aceite ODbL e prontidão de atribuição, além de instância
+  configurada própria para liberar o scanner. Nominatim público é bloqueado.
+- Testes focados com providers simulados: **25 aprovados**, sem chamadas
+  externas, com um aviso conhecido de depreciação Starlette/httpx.
+  Regressão Python completa: **236 aprovados**, zero falhas, com o mesmo aviso
+  conhecido. Pylance sem diagnósticos nos módulos de produção e testes
+  alterados.
+- P04.1 é bloqueio obrigatório antes de habilitar o fluxo ou publicar P06:
+  revisão de provedor/termos, retenção, atribuição, quotas e compatibilidade
+  geográfica. MapTiler ou outros provedores não foram contratados/ativados.
 
 ## Checkpoint P01 — registro anterior
 

@@ -29,6 +29,7 @@ from .competitive_metrics import (
     target_brand_confidence,
 )
 from .fetchers.base import FetchError
+from .business_finder import router as business_finder_router
 from .external_api import ExternalRequestSizeLimitMiddleware, router as external_router
 from .landing import router as landing_router
 from .metrics import point_difficulty, scan_coverage, scan_metrics
@@ -101,12 +102,15 @@ app = FastAPI(
 app.add_middleware(ExternalRequestSizeLimitMiddleware)
 app.include_router(external_router)
 app.include_router(landing_router)
+app.include_router(business_finder_router)
 
 
 @app.middleware("http")
 async def protect_landing_responses(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith(("/landing", "/diagnostico", "/api/landing/")):
+    if request.url.path.startswith(
+        ("/landing", "/diagnostico", "/api/landing/", "/api/business-finder/")
+    ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
     return response
