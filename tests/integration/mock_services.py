@@ -20,12 +20,19 @@ _counts = {"task_post": 0, "task_get": 0, "places": 0, "crm_events": 0}
 _crm_db = os.environ.get("MOCK_CRM_DB", "/tmp/mock-crm.sqlite")
 
 
-def _json_response(handler: BaseHTTPRequestHandler, status: int, value: dict) -> None:
+def _json_response(
+    handler: BaseHTTPRequestHandler,
+    status: int,
+    value: dict,
+    extra_headers: dict[str, str] | None = None,
+) -> None:
     body = json.dumps(value, separators=(",", ":")).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
     handler.send_header("Cache-Control", "no-store")
+    for name, header_value in (extra_headers or {}).items():
+        handler.send_header(name, header_value)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -51,7 +58,10 @@ class MockHandler(BaseHTTPRequestHandler):
             return
         if path.startswith("/__mock__/failure/"):
             code = int(path.rsplit("/", 1)[-1])
-            _json_response(self, code, {"error": {"code": code, "status": "SYNTHETIC_FAILURE"}})
+            _json_response(
+                self, code, {"error": {"code": code, "status": "SYNTHETIC_FAILURE"}},
+                {"Retry-After": "6"} if code == 429 else None,
+            )
             return
         if path == "/__mock__/metrics":
             with _lock:

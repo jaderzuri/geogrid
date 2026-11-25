@@ -1,6 +1,6 @@
 # Smart Grid by ZURI — Próximas tarefas
 
-## Checkpoint P01 e P02
+## Checkpoint P01 a P03
 
 - [x] Validar autorização única e reservas em PostgreSQL isolado, incluindo
   concorrência, claims expirados, virada UTC e reconciliação legada.
@@ -17,10 +17,24 @@
   caminho válido, sem chamadas pagas.
 - [x] Induzir falhas no claim e nos 17 cenários dos nós de processamento e
   callbacks no n8n isolado, com simuladores e reservas verificadas.
-- [ ] Implementar e homologar P03: recuperação e retentativas seguras, sem
-  repetir submissões incertas.
+- [x] Tratar erros HTTP de protocolo/proxy da Landing Page com 503 sanitizado.
+- [x] Implementar P03: backoff exponencial com jitter, limite configurável,
+  Retry-After e agenda persistente das retentativas pré-submissão.
+- [x] Persistir respostas pagas antes da associação e recuperar IDs/custos de
+  forma idempotente, sem repetir task_post; preservar reserva com custo incerto.
+- [x] Validar P03 em PostgreSQL isolado e n8n 1.123.21 com simuladores,
+  incluindo falhas de associação/persistência e Retry-After.
 - [ ] Caso a resposta HTTP não tenha sido preservada antes da falha, reconciliar
   manualmente os IDs e custos incertos, sem reenviar `task_post`.
+
+## P04 — Smart Business Finder
+
+- [ ] Implementar busca backend sem seleção automática e sem chamadas pagas
+  durante testes.
+- [ ] Classificar localização, homônimos, filiais, divergência, dados
+  insuficientes, limite e falhas técnicas.
+- [ ] Exigir confirmação explícita antes da autorização de diagnóstico; deixar
+  a interface visual para P06.
 
 ## Homologação integrada — executada em 2026-11-25
 

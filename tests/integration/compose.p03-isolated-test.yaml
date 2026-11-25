@@ -1,0 +1,17 @@
+networks:
+  isolated:
+    external: true
+    name: ${P03_TEST_ISOLATED_NETWORK:?set an existing internal test network}
+  homolog:
+    external: true
+    name: ${P03_TEST_HOMOLOG_NETWORK:?set an existing internal test network}
+
+volumes:
+  postgres-state:
+    name: ${P03_TEST_POSTGRES_VOLUME:?set a new explicit PostgreSQL volume}
+  n8n-state:
+    name: ${P03_TEST_N8N_VOLUME:?set a new explicit n8n volume}
+  smart-grid-state:
+    name: ${P03_TEST_SMART_GRID_VOLUME:?set a new explicit Smart Grid volume}
+  mock-certs:
+    name: ${P03_TEST_MOCK_CERTS_VOLUME:?set a new explicit mock certificate volume}

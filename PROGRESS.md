@@ -2,10 +2,10 @@
 
 Última atualização: 2026-11-25.
 
-## P02 — estado atual
+## P02 — concluído
 
 - P01 foi commitado e enviado sob autorização: `6fc53a142cbe0cb0edceed83a097e96853d8f2da`.
-  As alterações P02 permanecem locais e sem commit.
+  P02 foi commitado localmente como `4ccc300`, sem push.
 - Migration 007 e workflow 02 registram categorias e metadados sanitizados,
   distinguem a fase financeira e preservam as proteções do P01. Erros de claim
   interrompem a execução quando não é possível registrá-los no PostgreSQL.
@@ -19,6 +19,34 @@
   seis POSTs simulados esperados, sem repetição durante o período observado.
 - Volumes de evidência preservados. Os percentuais históricos abaixo não
   incorporam novos critérios P02 e não representam prontidão de produção.
+
+## P03 — concluído localmente
+
+- Landing Page: retries limitados configuráveis para falhas de transporte,
+  HTTP 429 e 5xx, backoff exponencial com jitter e `Retry-After`. Cada tentativa
+  reutiliza URL, `request_id` e payload; o navegador preserva o mesmo payload
+  durante a tentativa da sessão sem guardá-lo em `sessionStorage`.
+- PostgreSQL isolado: passaram limites/backoff/Retry-After, falha permanente,
+  claim pré-submissão expirado, journal da resposta, associação tardia de nove
+  IDs e reserva mantida para custo desconhecido até reconciliação.
+- n8n 1.123.21 com simuladores: claim e 17 falhas induzidas passaram. A resposta
+  recebida antes de falhas de associação/persistência foi recuperada, com uma
+  autorização e sem repetir `task_post`; `Retry-After: 6` foi propagado e
+  respeitado pela agenda.
+- Regressão Python: 211 aprovados, zero falhas, um aviso conhecido de
+  depreciação do `httpx` no `TestClient`. Teste focado Landing Page: 25 passaram.
+- Limitação: se a resposta HTTP paga se perder antes de entrar no journal, não
+  há fonte segura para recuperar os IDs; manter `submission_uncertain`,
+  reserva retida e reconciliação manual. Não reenviar `task_post`.
+- Teste de reinicialização do n8n com simuladores já havia passado na rodada P03
+  anterior; os testes atuais também cobriram a recuperação do journal após
+  falhas induzidas, mas não repetiram o ciclo de restart.
+
+## P04 — próximo
+
+- Implementação autorizada do Smart Business Finder backend. Busca real
+  permanecerá desabilitada sem credencial configurada; testes usam simuladores.
+- Não alterar a interface visual da Landing Page; ela permanece no escopo P06.
 
 ## Checkpoint P01 — registro anterior
 

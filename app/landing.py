@@ -1,10 +1,14 @@
 """Public, capability-protected Landing Page integration endpoints."""
 
 import asyncio
+import math
 import os
+import random
 import re
 import time
 from collections import defaultdict, deque
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
@@ -216,30 +220,77 @@ async def _post_to_n8n(url: str, payload: dict) -> dict:
         )
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                timeout_seconds,
-                connect=min(timeout_seconds, 5),
-                pool=min(timeout_seconds, 5),
-            ),
-            follow_redirects=False,
-        ) as client:
-            response = await client.post(url, json=payload)
-    except httpx.TimeoutException as error:
-        raise HTTPException(
-            status_code=503,
-            detail="Integration service timed out; retry the same request",
-        ) from error
-    except httpx.NetworkError as error:
-        raise HTTPException(
-            status_code=503,
-            detail="Integration service is temporarily unavailable; retry the same request",
-        ) from error
-    if response.status_code not in (200, 202):
-        raise HTTPException(
-            status_code=503 if response.status_code >= 500 else response.status_code,
-            detail="Lead service could not accept this request",
-        )
+        max_attempts = int(os.environ.get("ZURI_N8N_RETRY_ATTEMPTS", "3"))
+        base_delay = float(os.environ.get("ZURI_N8N_RETRY_BASE_SECONDS", "0.25"))
+        max_delay = float(os.environ.get("ZURI_N8N_RETRY_MAX_DELAY_SECONDS", "10"))
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail="Landing retry policy is misconfigured") from error
+    if not 1 <= max_attempts <= 5 or not 0 <= base_delay <= 10 or not 0 <= max_delay <= 60:
+        raise HTTPException(status_code=503, detail="Landing retry policy is misconfigured")
+
+    def retry_after_seconds(value: str | None) -> int | None:
+        if not value:
+            return None
+        if value.strip().isdigit():
+            return max(0, int(value.strip()))
+        try:
+            date = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        return max(0, math.ceil((date - datetime.now(timezone.utc)).total_seconds()))
+
+    last_error: httpx.TransportError | None = None
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            timeout_seconds,
+            connect=min(timeout_seconds, 5),
+            pool=min(timeout_seconds, 5),
+        ),
+        follow_redirects=False,
+    ) as client:
+        for attempt in range(max_attempts):
+            try:
+                response = await client.post(url, json=payload)
+                last_error = None
+            except httpx.TransportError as error:
+                last_error = error
+                response = None
+
+            retry_after = retry_after_seconds(
+                response.headers.get("Retry-After") if response is not None else None
+            )
+            retryable_status = response is not None and (
+                response.status_code == 429 or response.status_code >= 500
+            )
+            if attempt + 1 < max_attempts and (last_error is not None or retryable_status):
+                exponential = min(max_delay, base_delay * (2 ** attempt))
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else random.uniform(exponential * 0.5, exponential * 1.5)
+                )
+                if delay <= 60:
+                    await asyncio.sleep(delay)
+                    continue
+            if last_error is not None:
+                detail = (
+                    "Integration service timed out; retry the same request"
+                    if isinstance(last_error, httpx.TimeoutException)
+                    else "Integration service is temporarily unavailable; retry the same request"
+                )
+                raise HTTPException(status_code=503, detail=detail) from last_error
+            assert response is not None
+            if response.status_code not in (200, 202):
+                headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
+                raise HTTPException(
+                    status_code=503 if response.status_code >= 500 else response.status_code,
+                    detail="Lead service could not accept this request",
+                    headers=headers,
+                )
+            break
+    assert response is not None
     try:
         result = response.json()
     except ValueError as error:

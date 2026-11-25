@@ -90,7 +90,14 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
   publicado na branch de feature. A migration 006 final foi testada.
 - **P02:** classificação e observabilidade implementadas localmente; testes
   do classificador, PostgreSQL e falhas induzidas nos nós do n8n isolado
-  passaram. P03 é o próximo pacote autorizado; P04 e Landing Page 2.0 não.
+  passaram; checkpoint local `4ccc300` sem push.
+- **P03:** concluído em ambiente isolado. Backoff/jitter, limite de tentativas,
+  `Retry-After`, agenda persistente e journal durável recuperam respostas
+  recebidas sem repetir `task_post`; resposta perdida antes do journal continua
+  em reconciliação manual. Checkpoint local autorizado, sem push.
+- **P04 Smart Business Finder:** próximo pacote autorizado; implementar busca
+  backend, classificação de candidatos e confirmação explícita. A interface
+  visual continua reservada ao P06.
 - Se a resposta HTTP não puder ser persistida nem recuperada, os IDs exigem
   reconciliação manual; manter a submissão incerta, sem reenvio automático.
   A garantia universal de chamada única entre banco e serviço externo não foi

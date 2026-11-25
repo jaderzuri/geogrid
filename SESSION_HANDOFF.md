@@ -2,11 +2,40 @@
 
 Data: 2026-11-25
 
-## Retomada P02 — validação concluída; checkpoint em preparação
+## P03 — concluído; P04 autorizado
+
+- Checkpoint P02 criado localmente: `4ccc300`; nenhum push realizado. Os 22
+  arquivos foram revisados e não incluem bancos, backups ou credenciais reais.
+- P03 implementado localmente; checkpoint autorizado após aprovação dos testes:
+  `feat: implement safe recovery and retry policies`. Nenhum push.
+- Landing Page usa retries limitados configuráveis para falhas de transporte,
+  429 e 5xx, backoff exponencial com jitter e `Retry-After`, enviando a mesma
+  URL e o mesmo payload (incluindo `request_id`). O navegador mantém o payload
+  idêntico em memória durante retries da sessão, sem armazená-lo em storage.
+- PostgreSQL 16 isolado: passou teste de tentativas/backoff/Retry-After,
+  falha permanente, recuperação de claim expirado pré-submissão, journal,
+  associação idempotente de nove IDs, retenção de reserva com custo desconhecido
+  e reconciliação posterior.
+- n8n 1.123.21 com simuladores: passaram falha de claim e 17 falhas induzidas.
+  Falhas de associação e persistência recuperaram a resposta journalizada sem
+  novo POST; `Retry-After: 6` foi preservado e respeitado pela agenda.
+- Regressão Python final: 211 aprovados, zero falhas e um aviso conhecido do
+  `TestClient`; testes focados Landing Page: 25 aprovados. O restart P03 foi
+  aprovado em rodada isolada anterior e não foi repetido nesta rodada.
+- Limite operacional: se a resposta paga se perder antes de ser journalizada,
+  não há recuperação automática segura. Manter `submission_uncertain`, reserva
+  retida e reconciliação manual; nunca reenviar automaticamente `task_post`.
+- As stacks deste ciclo foram paradas sem remover volumes. Volumes criados
+  durante as validações falhas e bem-sucedidas foram preservados.
+- Próximo passo autorizado: implementar P04 Smart Business Finder apenas no
+  backend, usando simuladores nos testes; não alterar UI da Landing Page. Não
+  iniciar P05/P06 nem fazer push, merge, deploy ou chamadas pagas reais.
+
+## P02 — validação e checkpoint local concluídos
 
 - Checkpoint P01 `6fc53a142cbe0cb0edceed83a097e96853d8f2da` foi commitado e
   enviado à branch autorizada; o remoto foi confirmado com o mesmo hash.
-- P02 permanece local, sem commit. A migration 007 e o workflow
+- P02 foi commitado localmente em `4ccc300`, sem push. A migration 007 e o workflow
   02 registram falhas classificadas em `geogrid_execution_logs`, com mensagens
   fixas sanitizadas e fase anterior/posterior à autorização. As transições
   financeiras continuam usando as funções P01.
@@ -30,9 +59,8 @@ Data: 2026-11-25
   `geogrid-p02-20261125-final-p02-postgres-state` e os quatro volumes com
   prefixo `geogrid-p02-20261125-final-n8n`. Serviços P02 foram parados;
   o PostgreSQL da homologação anterior permanece intocado.
-- Próximo passo: revisão de arquivos e checkpoint local P02 autorizado; após
-  concluído, implementar P03. P04 e Landing Page 2.0 não foram autorizados.
-  Push não foi autorizado.
+- Próximo passo: iniciar P04 Smart Business Finder backend, autorizado neste
+  escopo. A interface visual permanece para P06; push continua não autorizado.
 
 Para repetir os testes, escolher nomes de volume inexistentes e exclusivos:
 

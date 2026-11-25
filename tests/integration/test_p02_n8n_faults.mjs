@@ -89,13 +89,27 @@ for (const [fault, node, category, phase] of cases) {
   assert.equal(details.category, category, fault);
   assert.equal(details.paid_phase, phase, fault);
   assert(details.execution_id && details.stage && details.attempt > 0);
+  if (fault === 'rate') {
+    assert.equal(details.retry_after_seconds, 6);
+    assert(details.scheduled_delay_seconds >= 6);
+  }
   assert(!JSON.stringify(details).includes('synthetic@example.test'));
   const state = query(`SELECT status,budget_reservation_state,budget_reserved_usd,
     task_post_authorization_count FROM geogrid_requests WHERE request_id='${id}'`).split('|');
   if (phase === 'after_authorization') {
-    assert.deepEqual(state.slice(0, 2), ['submission_uncertain', 'held_uncertain'], fault);
-    assert(Number(state[2]) > 0, fault);
     assert.equal(state[3], '1', fault);
+    if (['associate', 'ids-persist'].includes(fault)) {
+      assert(['submitted', 'processing', 'done', 'partial'].includes(state[0]), fault);
+      assert.equal(state[1], 'consumed', fault);
+      assert.equal(Number(state[2]), 0, fault);
+      assert.equal(query(`SELECT count(*) FROM geogrid_tasks WHERE request_id='${id}'
+        AND task_id IS NOT NULL`), '9', fault);
+      assert.equal(query(`SELECT recovered_at IS NOT NULL FROM geogrid_paid_response_journal
+        WHERE request_id='${id}'`), 't', fault);
+    } else {
+      assert.deepEqual(state.slice(0, 2), ['submission_uncertain', 'held_uncertain'], fault);
+      assert(Number(state[2]) > 0, fault);
+    }
   } else if (phase === 'after_response_persisted') {
     assert.equal(state[3], '1', fault);
     if (fault.startsWith('callback-')) {

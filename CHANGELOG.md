@@ -2,6 +2,18 @@
 
 Alterações relevantes do Smart Grid by ZURI.
 
+## Não lançado — P03 concluído localmente
+
+- Landing Page repete somente respostas HTTP 429/5xx e erros de transporte, com
+  limite configurável, backoff exponencial com jitter e `Retry-After`, mantendo
+  o mesmo identificador e payload idempotentes.
+- n8n persiste a resposta paga antes da associação e recupera IDs/custos a
+  partir do journal, sem repetir `task_post`. Falhas transitórias seguras
+  recebem agenda persistente; submissões incertas sem resposta journalizada
+  continuam exigindo reconciliação manual.
+- PostgreSQL e n8n isolados com simuladores passaram; regressão Python:
+  211 testes aprovados e um aviso de depreciação conhecido.
+
 ## Não lançado — P02
 
 - Classificação sanitizada por etapa no processador Standard, incluindo

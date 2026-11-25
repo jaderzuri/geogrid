@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -8,10 +10,10 @@ from app import landing, main
 
 
 class MockN8nResponse:
-    status_code = 202
-
-    def __init__(self, value):
+    def __init__(self, value, status_code=202, headers=None):
         self.value = value
+        self.status_code = status_code
+        self.headers = headers or {}
 
     def json(self):
         return self.value
@@ -184,9 +186,9 @@ def test_invalid_leads_are_rejected_without_n8n_calls(client, changes, expected_
 
 
 def test_lead_service_failures_are_sanitized(client):
-    MockN8nClient.response_factory = lambda _url, _payload: type(
-        "Unavailable", (), {"status_code": 503, "json": lambda self: {"detail": "sensitive"}}
-    )()
+    MockN8nClient.response_factory = lambda _url, _payload: MockN8nResponse(
+        {"detail": "sensitive"}, status_code=503
+    )
 
     response = client.post("/api/landing/leads", json=_payload())
     assert response.status_code == 503
@@ -206,6 +208,91 @@ def test_lead_webhook_timeout_returns_retryable_503(client):
         "Integration service timed out; retry the same request"
     )
     assert MockN8nClient.timeouts[0].read == 30
+
+
+@pytest.mark.parametrize("error_type", [httpx.RemoteProtocolError, httpx.ProxyError])
+def test_lead_transport_errors_return_sanitized_retryable_503(client, error_type):
+    def failed_response(_url, _payload):
+        raise error_type("sensitive provider details")
+
+    MockN8nClient.response_factory = failed_response
+    response = client.post("/api/landing/leads", json=_payload())
+    assert response.status_code == 503
+    assert "retry the same request" in response.json()["detail"]
+    assert "sensitive" not in response.text
+
+
+def test_lead_retry_uses_same_payload_and_honors_retry_after(client, monkeypatch):
+    payload = _payload()
+    accepted = MockN8nResponse({
+        "accepted": True, "request_id": payload["request_id"],
+        "status": "queued", "duplicate": True,
+    })
+    responses = iter([
+        MockN8nResponse({"detail": "busy"}, status_code=429, headers={"Retry-After": "2"}),
+        accepted,
+    ])
+    MockN8nClient.response_factory = lambda _url, _payload: next(responses)
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(landing.asyncio, "sleep", record_sleep)
+    response = client.post("/api/landing/leads", json=payload)
+
+    assert response.status_code == 202
+    assert len(MockN8nClient.calls) == 2
+    assert MockN8nClient.calls[0] == MockN8nClient.calls[1]
+    assert MockN8nClient.calls[0][1]["request_id"] == payload["request_id"]
+    assert delays == [2]
+
+
+def test_lead_retry_after_http_date_is_not_retried_early(client, monkeypatch):
+    payload = _payload()
+    retry_at = format_datetime(
+        datetime.now(timezone.utc) + timedelta(seconds=30),
+        usegmt=True,
+    )
+    responses = iter([
+        MockN8nResponse(
+            {"detail": "busy"},
+            status_code=429,
+            headers={"Retry-After": retry_at},
+        ),
+        MockN8nResponse({
+            "accepted": True,
+            "request_id": payload["request_id"],
+            "status": "queued",
+        }),
+    ])
+    MockN8nClient.response_factory = lambda _url, _payload: next(responses)
+    delays = []
+
+    async def record_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(landing.asyncio, "sleep", record_sleep)
+    response = client.post("/api/landing/leads", json=payload)
+
+    assert response.status_code == 202
+    assert len(MockN8nClient.calls) == 2
+    assert 0 < delays[0] <= 30
+
+
+def test_lead_retry_attempt_limit_is_configurable(client, monkeypatch):
+    monkeypatch.setenv("ZURI_N8N_RETRY_ATTEMPTS", "2")
+    MockN8nClient.response_factory = lambda _url, _payload: MockN8nResponse(
+        {"detail": "unavailable"}, status_code=503
+    )
+    async def no_wait(_delay):
+        return None
+
+    monkeypatch.setattr(landing.asyncio, "sleep", no_wait)
+    response = client.post("/api/landing/leads", json=_payload())
+
+    assert response.status_code == 503
+    assert len(MockN8nClient.calls) == 2
 
 
 def test_landing_n8n_timeout_is_configurable_and_bounded(client, monkeypatch):

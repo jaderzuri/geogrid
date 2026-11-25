@@ -84,7 +84,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const original = $('Atomically Claim One Request').item.json;\nconst origin = $prevNode.name;\nconst err = $json.error ?? $json;\nconst message = [typeof err === 'string' ? err : null, err?.message, err?.description, err?.code, err?.cause?.message, $json.message].filter(x => typeof x === 'string').join(' ');\nconst marker = ['Validate Resolved Business', 'Extract Exact Google Place ID'].includes(origin) ? message.match(/P02:(BUSINESS_NOT_FOUND|BUSINESS_AMBIGUOUS|INVALID_PLACE_ID|BUSINESS_IDENTITY_MISMATCH|BUSINESS_LOCATION_MISMATCH|CONNECTION_ERROR|TIMEOUT|RATE_LIMIT|AUTHENTICATION_ERROR|API_CONTRACT_ERROR|PERSISTENCE_ERROR|BUDGET_LIMIT|SUBMISSION_UNCERTAIN|PERMANENT_ERROR)(?::([0-9]{3,5}))?/) : null;\nconst rawCode = String(err?.httpCode ?? err?.statusCode ?? err?.code ?? '');\nconst knownCodes = new Set(['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);\nconst code = marker?.[2] ?? (/^[0-9]{3,5}$/.test(rawCode) || knownCodes.has(rawCode) ? rawCode : null);\nlet category;\nif (marker) category = marker[1];\nelse if (origin === 'Has Verifiable Place ID') category = 'BUSINESS_AMBIGUOUS';\nelse if (origin === 'Extract Exact Google Place ID') category = 'INVALID_PLACE_ID';\nelse if (code === '401' || code === '403') category = 'AUTHENTICATION_ERROR';\nelse if (code === '429') category = 'RATE_LIMIT';\nelse if (/ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out/i.test(message)) category = 'TIMEOUT';\nelse if (/ECONN|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(message)) category = 'CONNECTION_ERROR';\nelse if (origin === 'Validate Resolved Business' || origin === 'Build Nine Standard Tasks' || origin === 'Associate and Classify task_post Response') category = 'API_CONTRACT_ERROR';\nelse if (origin.includes('Persist') || origin.includes('Record Failed') || origin.includes('Authorize') || origin === 'Log Persisted Submission Outcomes') category = 'PERSISTENCE_ERROR';\nelse if (code && Number(code) >= 500) category = 'CONNECTION_ERROR';\nelse category = 'PERMANENT_ERROR';\nconst node = marker && origin === 'Validate Resolved Business' && ['BUSINESS_NOT_FOUND', 'INVALID_PLACE_ID', 'AUTHENTICATION_ERROR', 'RATE_LIMIT', 'CONNECTION_ERROR'].includes(category) ? 'Resolve Exact Place Details' : origin;\nreturn { json: { request_id: original.request_id, claim_token: original.claim_token, node, category, code, execution_id: String($execution.id) } };"
+        "jsCode": "const original = $('Atomically Claim One Request').item.json;\nconst origin = $prevNode.name;\nconst err = $json.error ?? $json;\nconst message = [typeof err === 'string' ? err : null, err?.message, err?.description, err?.code, err?.cause?.message, $json.message].filter(x => typeof x === 'string').join(' ');\nconst marker = ['Validate Resolved Business', 'Extract Exact Google Place ID'].includes(origin) ? message.match(/P02:(BUSINESS_NOT_FOUND|BUSINESS_AMBIGUOUS|INVALID_PLACE_ID|BUSINESS_IDENTITY_MISMATCH|BUSINESS_LOCATION_MISMATCH|CONNECTION_ERROR|TIMEOUT|RATE_LIMIT|AUTHENTICATION_ERROR|API_CONTRACT_ERROR|PERSISTENCE_ERROR|BUDGET_LIMIT|SUBMISSION_UNCERTAIN|PERMANENT_ERROR)(?::([0-9]{3,5}))?/) : null;\nconst retryMarker = message.match(/RETRY_AFTER=([0-9]{1,6})/);\nconst rawCode = String(err?.httpCode ?? err?.statusCode ?? err?.code ?? '');\nconst knownCodes = new Set(['ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);\nconst code = marker?.[2] ?? (/^[0-9]{3,5}$/.test(rawCode) || knownCodes.has(rawCode) ? rawCode : null);\nconst headerSources = [err?.response?.headers, err?.cause?.response?.headers, err?.context?.response?.headers, err?.cause?.headers, $json.error?.context?.response?.headers, $json.response?.headers, err?.headers, $json.headers];\nconst headers = headerSources.find(value => value && typeof value === 'object') ?? {};\nconst retryEntry = Object.entries(headers).find(([name]) => name.toLowerCase() === 'retry-after');\nconst retryHeaderRaw = retryEntry?.[1] ?? null;\nconst retryHeader = Array.isArray(retryHeaderRaw) ? retryHeaderRaw[0] : retryHeaderRaw;\nlet retryAfterSeconds = retryMarker ? Math.min(Number(retryMarker[1]), 86400) : null;\nif ((typeof retryHeader === 'string' && /^\\d{1,6}$/.test(retryHeader.trim())) || (typeof retryHeader === 'number' && Number.isInteger(retryHeader) && retryHeader >= 0)) retryAfterSeconds = Math.min(Number(retryHeader), 86400);\nelse if (typeof retryHeader === 'string' && Number.isFinite(Date.parse(retryHeader))) retryAfterSeconds = Math.min(86400, Math.max(0, Math.ceil((Date.parse(retryHeader) - Date.now()) / 1000)));\nlet category;\nif (marker) category = marker[1];\nelse if (origin === 'Has Verifiable Place ID') category = 'BUSINESS_AMBIGUOUS';\nelse if (origin === 'Extract Exact Google Place ID') category = 'INVALID_PLACE_ID';\nelse if (code === '401' || code === '403') category = 'AUTHENTICATION_ERROR';\nelse if (code === '429') category = 'RATE_LIMIT';\nelse if (/ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out/i.test(message)) category = 'TIMEOUT';\nelse if (/ECONN|ENOTFOUND|EAI_AGAIN|socket hang up|network/i.test(message)) category = 'CONNECTION_ERROR';\nelse if (origin === 'Validate Resolved Business' || origin === 'Build Nine Standard Tasks' || origin === 'Associate and Classify task_post Response') category = 'API_CONTRACT_ERROR';\nelse if (origin.includes('Persist') || origin.includes('Record Failed') || origin.includes('Authorize') || origin === 'Log Persisted Submission Outcomes') category = 'PERSISTENCE_ERROR';\nelse if (code && Number(code) >= 500) category = 'CONNECTION_ERROR';\nelse category = 'PERMANENT_ERROR';\nconst node = marker && origin === 'Validate Resolved Business' && ['BUSINESS_NOT_FOUND', 'INVALID_PLACE_ID', 'AUTHENTICATION_ERROR', 'RATE_LIMIT', 'CONNECTION_ERROR'].includes(category) ? 'Resolve Exact Place Details' : origin;\nreturn { json: { request_id: original.request_id, claim_token: original.claim_token, node, category, code, retry_after_seconds: retryAfterSeconds, execution_id: String($execution.id) } };"
       },
       "id": "e55b85c2-70e8-407a-bf37-4f427c4b1f98",
       "name": "Classify Processor Failure",
@@ -110,7 +110,8 @@
           "response": {
             "response": {
               "responseFormat": "json",
-              "neverError": true
+              "neverError": true,
+              "fullResponse": true
             }
           },
           "timeout": 20000
@@ -132,7 +133,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const r = $('Extract Exact Google Place ID').item.json;\nconst p = $json.body ?? $json;\nconst providerCode = Number(p?.error?.code);\nif (Number.isInteger(providerCode)) {\n  const category = providerCode === 404 ? 'BUSINESS_NOT_FOUND' : [401, 403].includes(providerCode) ? 'AUTHENTICATION_ERROR' : providerCode === 429 ? 'RATE_LIMIT' : providerCode >= 500 ? 'CONNECTION_ERROR' : providerCode === 400 ? 'INVALID_PLACE_ID' : 'PERMANENT_ERROR';\n  throw new Error(`P02:${category}:${providerCode}`);\n}\nif (!p || !p.id || !p.location || !Number.isFinite(p.location.latitude) || !Number.isFinite(p.location.longitude)) throw new Error('P02:API_CONTRACT_ERROR');\nconst name = p.displayName?.text || '';\nconst normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst requestedName = normalize(r.company_name);\nconst resolvedName = normalize(name);\nif (!requestedName || !resolvedName || !(resolvedName.includes(requestedName) || requestedName.includes(resolvedName))) throw new Error('P02:BUSINESS_IDENTITY_MISMATCH');\nconst crypto = require('crypto');\nconst businessId = 'gplaces-' + crypto.createHash('sha256').update(p.id).digest('hex').slice(0, 40);\nreturn { json: { ...r, business_id: businessId, resolved_place_id: p.id, resolved_name: name, center_lat: p.location.latitude, center_lng: p.location.longitude, address: p.formattedAddress || `${r.city}, ${r.state}`, category: p.primaryTypeDisplayName?.text || null } };"
+        "jsCode": "const r = $('Extract Exact Google Place ID').item.json;\nconst response = $('Resolve Exact Place Details').item.json;\nconst p = response.body ?? response;\nconst retryEntry = Object.entries(response.headers ?? {}).find(([name]) => name.toLowerCase() === 'retry-after');\nconst retryRaw = Array.isArray(retryEntry?.[1]) ? retryEntry[1][0] : retryEntry?.[1];\nlet retryAfterSeconds = null;\nif ((typeof retryRaw === 'string' && /^\\d{1,6}$/.test(retryRaw.trim())) || (typeof retryRaw === 'number' && Number.isInteger(retryRaw) && retryRaw >= 0)) retryAfterSeconds = Math.min(Number(retryRaw), 86400);\nelse if (typeof retryRaw === 'string' && Number.isFinite(Date.parse(retryRaw))) retryAfterSeconds = Math.min(86400, Math.max(0, Math.ceil((Date.parse(retryRaw) - Date.now()) / 1000)));\nconst providerCode = Number(p?.error?.code);\nif (Number.isInteger(providerCode)) {\n  const category = providerCode === 404 ? 'BUSINESS_NOT_FOUND' : [401, 403].includes(providerCode) ? 'AUTHENTICATION_ERROR' : providerCode === 429 ? 'RATE_LIMIT' : providerCode >= 500 ? 'CONNECTION_ERROR' : providerCode === 400 ? 'INVALID_PLACE_ID' : 'PERMANENT_ERROR';\n  const retrySuffix = providerCode === 429 && retryAfterSeconds !== null ? `:RETRY_AFTER=${retryAfterSeconds}` : '';\n  throw new Error(`P02:${category}:${providerCode}${retrySuffix}`);\n}\nif (!p || !p.id || !p.location || !Number.isFinite(p.location.latitude) || !Number.isFinite(p.location.longitude)) throw new Error('P02:API_CONTRACT_ERROR');\nconst name = p.displayName?.text || '';\nconst normalize = value => value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst requestedName = normalize(r.company_name);\nconst resolvedName = normalize(name);\nif (!requestedName || !resolvedName || !(resolvedName.includes(requestedName) || requestedName.includes(resolvedName))) throw new Error('P02:BUSINESS_IDENTITY_MISMATCH');\nconst crypto = require('crypto');\nconst businessId = 'gplaces-' + crypto.createHash('sha256').update(p.id).digest('hex').slice(0, 40);\nreturn { json: { ...r, business_id: businessId, resolved_place_id: p.id, resolved_name: name, center_lat: p.location.latitude, center_lng: p.location.longitude, address: p.formattedAddress || `${r.city}, ${r.state}`, category: p.primaryTypeDisplayName?.text || null } };"
       },
       "id": "c0fd8818-8ee8-44a6-a0ea-48d0f98463d4",
       "name": "Validate Resolved Business",
@@ -312,7 +313,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const response = $json.body ?? $json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst expected = build.tasks;\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet mapped;\nif (code !== 20000 && (!Array.isArray(response.tasks) || response.tasks.length === 0)) {\n  mapped = expected.map((t, i) => ({ row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\n} else {\n  const tasks = Array.isArray(response.tasks) ? response.tasks : [];\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = expected.map((input, i) => {\n    let t = byTag.get(input.tag);\n    if (!t && tasks.length === expected.length) {\n      t = tasks.find(candidate => candidate.data?.location_coordinate === input.location_coordinate);\n    }\n    if (!t) return { row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag/coordinate; manual reconciliation required' };\n    const taskCode = Number(t.status_code);\n    return { row: build.points[i].row, col: build.points[i].col, task_id: t.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: t.status_message || message, cost: t.cost == null ? null : Number(t.cost), error_category: categories[taskCode] || (t.id ? null : 'technical_error'), error_message: t.id ? null : (t.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst taskCostsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalCostKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nconst totalCost = totalCostKnown ? Number(response.cost) : (taskCostsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null);\nreturn { json: { request_id: build.request_id, claim_token: build.claim_token, task_results: mapped, total_cost_usd: totalCost } };"
+        "jsCode": "        const response = $('Paid DataForSEO task_post - No Automatic Retry').item.json.body ?? $('Paid DataForSEO task_post - No Automatic Retry').item.json;\nconst build = $('Build Nine Standard Tasks').item.json;\nconst expected = build.tasks;\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nlet mapped;\nif (code !== 20000 && (!Array.isArray(response.tasks) || response.tasks.length === 0)) {\n  mapped = expected.map((t, i) => ({ row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\n} else {\n  const tasks = Array.isArray(response.tasks) ? response.tasks : [];\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = expected.map((input, i) => {\n    let t = byTag.get(input.tag);\n    if (!t && tasks.length === expected.length) {\n      t = tasks.find(candidate => candidate.data?.location_coordinate === input.location_coordinate);\n    }\n    if (!t) return { row: build.points[i].row, col: build.points[i].col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag/coordinate; manual reconciliation required' };\n    const taskCode = Number(t.status_code);\n    return { row: build.points[i].row, col: build.points[i].col, task_id: t.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: t.status_message || message, cost: t.cost == null ? null : Number(t.cost), error_category: categories[taskCode] || (t.id ? null : 'technical_error'), error_message: t.id ? null : (t.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst taskCostsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalCostKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nconst totalCost = totalCostKnown ? Number(response.cost) : (taskCostsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null);\nreturn { json: { request_id: build.request_id, claim_token: build.claim_token, task_results: mapped, total_cost_usd: totalCost } };"
       },
       "id": "46f1307a-bb84-4b24-8b2f-f9a9550b430a",
       "name": "Associate and Classify task_post Response",
@@ -320,6 +321,139 @@
       "typeVersion": 2,
       "position": [3540, 240],
       "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_journal_paid_response($1::uuid,$2::uuid,$3::text,$4::jsonb) AS journaled;",
+        "options": {
+          "queryReplacement": "={{ [ $('Build Nine Standard Tasks').item.json.request_id, $('Build Nine Standard Tasks').item.json.claim_token, String($execution.id), JSON.stringify($('Paid DataForSEO task_post - No Automatic Retry').item.json.body ?? $('Paid DataForSEO task_post - No Automatic Retry').item.json) ] }}"
+        }
+      },
+      "id": "p03-journal-paid-response",
+      "name": "Journal DataForSEO Paid Response",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [3520, 240],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM geogrid_claim_paid_response_recovery($1::text);",
+        "options": {
+          "queryReplacement": "={{ [String($execution.id)] }}"
+        }
+      },
+      "id": "p03-claim-response-recovery",
+      "name": "Claim Unpersisted Paid Response",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [440, 900],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const response = $json.response_body;\nconst points = $json.point_map;\nif (!response || !Array.isArray(points) || points.length !== 9) throw new Error('Journal response or point map is invalid');\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nconst tasks = Array.isArray(response.tasks) ? response.tasks : [];\nlet mapped;\nif (code !== 20000 && tasks.length === 0) mapped = points.map(p => ({ row: p.row, col: p.col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\nelse {\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = points.map(p => {\n    const task = byTag.get(p.tag);\n    if (!task) return { row: p.row, col: p.col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag; manual reconciliation required' };\n    const taskCode = Number(task.status_code);\n    return { row: p.row, col: p.col, task_id: task.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: task.status_message || message, cost: task.cost == null ? null : Number(task.cost), error_category: categories[taskCode] || (task.id ? null : 'technical_error'), error_message: task.id ? null : (task.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst costsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nreturn { json: { request_id: $json.request_id, claim_token: $json.authorization_claim_token, recovery_token: $json.recovery_token, task_results: mapped, total_cost_usd: totalKnown ? Number(response.cost) : costsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null } };"
+      },
+      "id": "p03-map-paid-response",
+      "name": "Reconstruct Journaled DataForSEO Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 900],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_save_post_response($1::uuid,$2::uuid,$3::jsonb,$4::numeric) AS status;",
+        "options": {
+          "queryReplacement": "={{ [ $json.request_id, $json.claim_token, JSON.stringify($json.task_results), $json.total_cost_usd ] }}"
+        }
+      },
+      "id": "p03-persist-recovered-response",
+      "name": "Persist Recovered DataForSEO IDs and Cost",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [940, 900],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_paid_response_recovered($1::uuid,$2::uuid) AS recovered;",
+        "options": {
+          "queryReplacement": "={{ [ $('Reconstruct Journaled DataForSEO Response').item.json.request_id, $('Reconstruct Journaled DataForSEO Response').item.json.recovery_token ] }}"
+        }
+      },
+      "id": "p03-mark-response-recovered",
+      "name": "Mark Paid Response Journal Recovered",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1180, 900],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_log_post_outcomes($1::uuid,$2::uuid,$3::text) AS recorded;",
+        "options": {
+          "queryReplacement": "={{ [ $('Reconstruct Journaled DataForSEO Response').item.json.request_id, $('Reconstruct Journaled DataForSEO Response').item.json.claim_token, String($execution.id) ] }}"
+        }
+      },
+      "id": "p03-log-recovered-outcomes",
+      "name": "Log Recovered Submission Outcomes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1180, 1040],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT geogrid_mark_paid_response_recovered($1::uuid,NULL) AS recovered;",
+        "options": {
+          "queryReplacement": "={{ [ $('Associate and Classify task_post Response').item.json.request_id ] }}"
+        }
+      },
+      "id": "p03-mark-normal-response-recovered",
+      "name": "Mark Normally Persisted Paid Response",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [4240, 360],
+      "credentials": {
+        "postgres": {
+          "id": "SELECT_POSTGRES_CREDENTIAL_AFTER_IMPORT",
+          "name": "GeoGrid Queue PostgreSQL (configure after import)"
+        }
+      }
     },
     {
       "parameters": {
@@ -366,9 +500,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT geogrid_record_processor_error($1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text) AS recorded;",
+        "query": "SELECT geogrid_record_processor_error($1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::integer) AS recorded;",
         "options": {
-          "queryReplacement": "={{ [$json.request_id, $json.claim_token, $json.node, $json.category, $json.code, $json.execution_id] }}"
+          "queryReplacement": "={{ [$json.request_id, $json.claim_token, $json.node, $json.category, $json.code, $json.execution_id, $json.retry_after_seconds] }}"
         }
       },
       "id": "58a1edb9-cfe3-4896-aeab-c22a26a5f14b",
@@ -493,6 +627,11 @@
         [
           {
             "node": "Atomically Claim One Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Claim Unpersisted Paid Response",
             "type": "main",
             "index": 0
           }
@@ -676,6 +815,24 @@
       "main": [
         [
           {
+            "node": "Journal DataForSEO Paid Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Journal DataForSEO Paid Response": {
+      "main": [
+        [
+          {
             "node": "Associate and Classify task_post Response",
             "type": "main",
             "index": 0
@@ -708,6 +865,51 @@
         ]
       ]
     },
+    "Claim Unpersisted Paid Response": {
+      "main": [
+        [
+          {
+            "node": "Reconstruct Journaled DataForSEO Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconstruct Journaled DataForSEO Response": {
+      "main": [
+        [
+          {
+            "node": "Persist Recovered DataForSEO IDs and Cost",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Persist Recovered DataForSEO IDs and Cost": {
+      "main": [
+        [
+          {
+            "node": "Log Recovered Submission Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Recovered Submission Outcomes": {
+      "main": [
+        [
+          {
+            "node": "Mark Paid Response Journal Recovered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Persist DataForSEO IDs and Cost": {
       "main": [
         [
@@ -730,7 +932,7 @@
       "main": [
         [
           {
-            "node": "Build Failed Submission Point Callbacks",
+            "node": "Mark Normally Persisted Paid Response",
             "type": "main",
             "index": 0
           }
@@ -738,6 +940,17 @@
         [
           {
             "node": "Classify Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Normally Persisted Paid Response": {
+      "main": [
+        [
+          {
+            "node": "Build Failed Submission Point Callbacks",
             "type": "main",
             "index": 0
           }

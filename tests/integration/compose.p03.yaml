@@ -1,0 +1,8 @@
+services:
+  test-runner:
+    volumes:
+      - ./test_p03_postgres.mjs:/app/test_p03_postgres.mjs:ro
+      - ../../workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql:/app/migration-006.sql:ro
+      - ../../workflows/n8n/sql/007-processor-error-observability.sql:/app/migration-007.sql:ro
+      - ../../workflows/n8n/sql/008-safe-retries-and-paid-response-journal.sql:/app/migration-008.sql:ro
+    command: ["node", "/app/test_p03_postgres.mjs"]

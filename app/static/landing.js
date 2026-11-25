@@ -8,6 +8,7 @@
   const policyLink = document.getElementById("privacy-link");
   let campaignId = "";
   let enabled = false;
+  let pendingSubmission = null;
 
   const bytesToHex = bytes =>
     Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
@@ -82,11 +83,12 @@
     button.disabled = true;
     button.textContent = "Enviando solicitação...";
     try {
+      if (!pendingSubmission) pendingSubmission = formValues();
       const response = await fetch("/api/landing/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify(formValues())
+        body: JSON.stringify(pendingSubmission)
       });
       const result = await response.json();
       if (!response.ok || result.accepted !== true) {
@@ -105,6 +107,7 @@
       document.getElementById("duplicate-note").hidden = !result.duplicate;
       form.hidden = true;
       confirmation.hidden = false;
+      pendingSubmission = null;
       sessionStorage.removeItem("zuri-pending-identity");
     } catch (submitError) {
       error.textContent = submitError instanceof Error
