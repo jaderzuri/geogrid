@@ -44,6 +44,8 @@
 
 ## P04 — Smart Business Finder (implementado localmente)
 
+- Checkpoint local: `f657b8d` (`feat: add Smart Business Finder backend`),
+  sem push.
 - Implementados os endpoints backend `POST /api/business-finder/search`,
   `/confirm` e `/diagnostics`, sem alterações na interface visual da Landing
   Page. A busca real requer provider/credenciais configurados; o limite diário

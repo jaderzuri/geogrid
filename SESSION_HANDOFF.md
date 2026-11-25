@@ -4,10 +4,10 @@ Data: 2026-11-25
 
 ## P04 — implementação local e validação
 
-- Branch continua `feature/dataforseo-standard-normal`; HEAD local esperado
-  `790bcb5` (P03), sem commit P04. Alterações preexistentes e não relacionadas
-  — três backups `.bak` e `instalar_ida_adaptativo.py` — foram preservadas e
-  não devem entrar em checkpoint.
+- Branch `feature/dataforseo-standard-normal`; checkpoint P04 local
+  `f657b8d` (`feat: add Smart Business Finder backend`), sem push.
+  Alterações preexistentes e não relacionadas — três backups `.bak` e
+  `instalar_ida_adaptativo.py` — foram preservadas e não entraram no checkpoint.
 - Implementados `app/business_finder.py`, alterações aditivas em `app/db.py`,
   registro/políticas de resposta em `app/main.py` e testes
   `tests/test_business_finder.py`.
@@ -24,10 +24,10 @@ Data: 2026-11-25
 - P04.1 — compatibilidade de licença, retenção, atribuição, quotas e scanner —
   é obrigatório antes de habilitar ou publicar P06. Nenhum provedor comercial
   foi contratado/ativado.
-- Próximos passos: repetir os testes focados após a limpeza dos avisos Pylance,
-  inspecionar `git diff --check`/diff e revisar o conjunto final de arquivos.
-  Não iniciar P05/P06; nenhum push, merge, deploy,
-  chamada paga, alteração de produção ou exclusão está autorizado.
+- P04 foi revisado, a regressão foi repetida e o checkpoint foi criado.
+  Próximo passo é aguardar autorização para P05. Não iniciar P05/P06 sem
+  orientação; não houve push, merge, deploy, chamada paga, alteração de
+  produção ou exclusão.
 
 ## P03 — concluído; P04 autorizado anteriormente
 

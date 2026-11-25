@@ -98,8 +98,8 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 - **P04 Smart Business Finder:** backend implementado localmente com busca
   configurável, classificação, confirmação explícita, limites persistentes e
   gates de proveniência. Testes focados simulados: 25 aprovados; regressão
-  completa: 236 aprovados. Nenhuma busca real foi executada. A interface visual
-  continua reservada ao P06.
+  completa: 236 aprovados. Checkpoint local `f657b8d`, sem push. Nenhuma busca
+  real foi executada. A interface visual continua reservada ao P06.
 - **P04.1 — compatibilidade e licenciamento:** bloqueio obrigatório antes de
   habilitar o fluxo em produção ou publicar a Landing Page 2.0. Validar com
   revisão legal/operacional o provedor, direitos de uso, retenção, atribuição,

@@ -4,6 +4,7 @@ Alterações relevantes do Smart Grid by ZURI.
 
 ## Não lançado — P04 Smart Business Finder (implementado localmente)
 
+- Checkpoint local `f657b8d`, sem push.
 - Adicionados endpoints backend de busca, confirmação explícita e início de
   diagnóstico, com classificação de candidatos e validação de identidade e
   localização. Nenhuma empresa é selecionada automaticamente.
