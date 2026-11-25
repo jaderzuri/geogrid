@@ -2,6 +2,93 @@
 
 Última atualização: 2026-11-25.
 
+## Sprint de lançamento comercial — implementação local em validação
+
+- Captura de concorrentes implementada sobre resultados de scans Express
+  concluídos, com deduplicação, observações e qualificação; sem chamadas
+  adicionais. O gate separado `ZURI_PROSPECTING_DATA_USE_APPROVED` controla
+  armazenamento/exportação de candidatos reais; simulações não são exportáveis.
+- Painel administrativo com sessão de operador, filtros e CSV; exportação de
+  leads exige consentimento de marketing explícito.
+- Express real encaminha ao webhook n8n existente apenas quando os gates estão
+  aprovados. Profissional/Monitor no caminho real ficam em atendimento
+  assistido sem checkout ou processamento automático. O caminho pago continua
+  desativado por padrão; não houve chamada paga, deploy ou mudança de produção.
+- O lead envia também a pesquisa original associada ao token, evitando perder
+  a verificação de confirmação quando o candidato tem nome canônico diferente.
+- Testes focados: **42 aprovados**; regressão Python completa:
+  **253 aprovados**, um aviso conhecido Starlette/httpx. `node --check` nos
+  dois scripts admin/comerciais e `git diff --check` passaram. Pylance não
+  reportou diagnósticos nos arquivos verificados (`commercial_api.py`,
+  `commercial_store.py`, `commercial.py` e testes) e confirmou a
+  compatibilidade do call site de `commercial_store.create_order`.
+- A revisão final confirmou somente código, testes e documentação comerciais
+  no checkpoint; os backups `.bak` e `instalar_ida_adaptativo.py` ficam fora.
+  Checkpoint local será criado após essa seleção, sem push, merge ou deploy.
+  Nenhuma consulta paga ou alteração de produção ocorreu.
+
+## Jornada comercial simulada — implementação concluída localmente
+
+- Implementada a jornada nativa de homologação com busca sintética,
+  confirmação explícita, lead, Express 3×3, relatório protegido, oferta de
+  upgrade, pedido Professional, confirmação manual auditada e liberação 7×7
+  por operador. Monitor permanece somente assistido, sem recorrência.
+- Adicionadas persistência SQLite aditiva, limites configuráveis de diagnósticos
+  e pontos, controle de capacidade e rotas WordPress autenticadas por bearer
+  servidor-a-servidor. O contrato está em
+  `docs/wordpress-commercial-api.md`.
+- A interface Live anterior continua disponível em `/landing-legacy`. O
+  simulador usa exclusivamente candidatos e resultados fictícios; o caminho
+  real Express permanece separado e condicionado aos gates de licenciamento.
+- Corrigida a gravação de pontos pendentes para evitar duplicação quando o
+  Business Finder prepara a grade antes do worker. O worker também não
+  reenvia scans finalizados ou parciais. O teste direcionado confirma que um
+  scan parcial é encerrado como falha, sem nova execução.
+- Testes focados da jornada, Business Finder e Landing: **62 aprovados**.
+  Teste específico do worker/reexecução: **1 aprovado**; arquivo comercial
+  completo após a adição: **5 aprovados**. Regressão Python completa:
+  **249 aprovados**, um aviso conhecido de depreciação Starlette/httpx.
+  `node --check app/static/commercial.js` e `git diff --check` passaram.
+- A validação completa não incluiu homologação PostgreSQL/n8n para a nova
+  jornada comercial, publicação, teste de WordPress externo nem chamadas reais.
+  Não houve alteração de produção, commit, push, merge, checkout real ou
+  consulta paga.
+- Estado: candidata funcional apenas para ambiente simulado. Antes de ativar,
+  resolver direitos upstream/MapTiler, configurar segredos no backend, validar
+  operação e limites do ambiente, homologar o workflow 7×7 se necessário e
+  obter autorização explícita de publicação.
+
+## Sprint MVP comercial — retomada e resultado parcial
+
+- Foram consultados novamente os termos oficiais. A FAQ DataForSEO permite
+  analytics/relatórios comerciais sob a condição da seção 7.1, mas diz que não
+  avalia casos particulares e não concede licenças de provedores upstream.
+  Assim, o uso de ranking Google Maps no Smart Grid não foi tratado como
+  autorizado. Os termos MapTiler limitam o plano gratuito a uso não comercial;
+  o plano da conta ZURI não foi verificado.
+- `app/commercial.py` agora centraliza os produtos experimentais e exige quatro
+  flags explícitas para liberar o encaminhamento de diagnósticos da Landing.
+  `app/landing.py` falha com HTTP 503 antes de chamar n8n se faltar qualquer
+  aprovação; `/api/landing/config` informa blockers e produtos. Preços:
+  Express R$ 0, Professional R$ 29,90 e Monitor R$ 97/mês, editáveis pelas
+  variáveis `ZURI_PRICE_EXPRESS_BRL`, `ZURI_PRICE_PROFESSIONAL_BRL` e
+  `ZURI_PRICE_MONITOR_BRL`.
+- Todos os produtos retornam `available=false` e `checkout_url=null`. Ainda
+  faltam busca/confirmação integrada à Landing, ordem comercial, links DOM e
+  liberação manual de pagamentos. O fluxo n8n de produção continua com grid
+  fixo 3×3; o Professional 7×7 não pode ser vendido como funcionalidade pronta.
+- DataForSEO Standard: estimativa da tarifa pública é US$ 0,0006 por página
+  SERP; 9 pontos = US$ 0,0054 e 49 pontos = US$ 0,0294 por palavra-chave,
+  antes de resolução da empresa, câmbio, tributos e operação. Não é custo real
+  verificado da conta.
+- Regressão Python completa: 244 aprovados, 0 falhas e 1 aviso conhecido
+  Starlette/httpx. Os testes Landing cobrem as quatro flags, bloqueio anterior
+  à chamada n8n, catálogo, configuração inválida e precisão de centavos.
+  Homologação comercial PostgreSQL/n8n ponta a ponta não foi executada porque
+  a oferta/checkout permanece bloqueada; não houve chamada paga, alteração de
+  banco, commit, push ou deploy.
+- A candidata comercial fica bloqueada. O modo Live permanece inalterado.
+
 ## P02 — concluído
 
 - P01 foi commitado e enviado sob autorização: `6fc53a142cbe0cb0edceed83a097e96853d8f2da`.

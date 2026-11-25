@@ -7,6 +7,74 @@ geográfica, preservando a interface Smart Grid Live e oferecendo uma fila
 assíncrona para solicitações externas. A arquitetura separa as pesquisas Live
 da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 
+## Sprint de lançamento comercial — candidata local
+
+- Implementados registros diretos de leads e captura de concorrentes a partir
+  dos resultados já persistidos de scans Express concluídos. A deduplicação é
+  por identidade do candidato e acumula observações; não há busca/enriquecimento
+  adicional. Exportação de prospectos DataForSEO exige
+  `ZURI_PROSPECTING_DATA_USE_APPROVED`; dados sintéticos nunca são elegíveis.
+- Incluído painel de operação autenticado com filtros e CSV. Leads só podem ser
+  exportados com consentimento explícito de marketing; exportação de
+  concorrentes permanece separadamente gated.
+- Implementado o caminho Express real como integração condicionada ao webhook
+  existente: grade 3×3, uma palavra-chave, 1 km e Standard Normal/priority 1.
+  Continua fechado até todas as aprovações/configurações e não houve chamada
+  paga ou teste em serviço real. Candidatos comerciais são processados somente
+  depois que o scan existente é concluído.
+- Professional e Monitor no modo real aceitam apenas solicitações idempotentes
+  de atendimento assistido. Checkout, confirmação financeira real, liberação e
+  diagnóstico Professional 7×7 não estão implementados para produção.
+- Foco de validação: preservar scanner Live, licenciamento, idempotência e
+  gates; testes usam mocks. Regressão consolidada concluída localmente:
+  **253 aprovados**, com o aviso conhecido Starlette/httpx. Os arquivos do
+  checkpoint foram revisados; artefatos locais e backups serão excluídos.
+
+- Foi implementada uma jornada comercial **somente simulada** na Landing Page
+  nativa: busca sintética com candidatos ambíguos, confirmação explícita,
+  cadastro de lead, diagnóstico Express 3×3, relatório protegido, oferta de
+  upgrade, pedido Professional, confirmação manual auditada e liberação 7×7.
+  Também há rotas autenticadas servidor-a-servidor para integração futura com
+  WordPress. O modo simulado exige configuração explícita e não usa provedores
+  externos nem credenciais comerciais.
+- A API oficial da DataForSEO informa que analytics/relatórios transformados
+  podem ser exibidos a clientes pagantes, mas sua FAQ declara que não confirma
+  conformidade de um produto específico e que os termos não concedem direitos
+  do provedor upstream. A compatibilidade do rastreamento de ranking local com
+  a seção 7.1 e os termos aplicáveis do Google continua sem confirmação; não
+  presumir autorização.
+- Os termos MapTiler Cloud limitam o plano gratuito a uso não comercial e
+  pesquisa/desenvolvimento. Não há evidência nesta sessão de assinatura
+  comercial, limites ou restrições de chave para o ambiente ZURI.
+- O Google Places permanece restrito à descoberta: sua política existente
+  impede usar coordenadas para gerar a grade. Nenhuma alternativa comercial
+  licenciada de coordenadas está ativa. Não adicionar OSM/Nominatim nesta
+  sprint.
+- Por isso, o endpoint da Landing Page que encaminha requests à fila paga
+  falha fechado até haver quatro aprovações/configurações explícitas:
+  `ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED`,
+  `ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED`,
+  `ZURI_GOOGLE_UPSTREAM_USE_APPROVED` e
+  `GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED`. A ativação dessas flags não
+  substitui revisão documental/contratual.
+- Catálogo experimental Express (3×3/1 palavra-chave, R$ 0), Professional
+  (7×7, R$ 29,90) e Monitor (R$ 97/mês assistido) está centralizado e seus
+  valores, disponibilidade e grids são configuráveis. No simulador, Express
+  gera relatório sintético e Professional exige confirmação de pagamento e
+  liberação por operador autorizado; Monitor só registra interesse assistido.
+  Checkout real e cobrança continuam bloqueados. O workflow n8n Standard
+  existente aceita somente 3×3; o Express real só pode usá-lo com gates
+  adicionais aprovados. No caminho real Professional permanece assistido.
+- Estimativa tarifária pública DataForSEO Standard para Google Maps SERP:
+  US$ 0,0006 por página, logo US$ 0,0054 para 9 pontos e US$ 0,0294 para
+  49 pontos, por palavra-chave. Estimativa não inclui resolução de empresa,
+  cobranças adicionais, tributos, câmbio ou custos de operação; não representa
+  custo confirmado da conta. Fonte: [preços da Google Maps SERP API](https://dataforseo.com/apis/serp-api/google-maps-api).
+- A jornada simulada não é candidata à ativação comercial. Permanecem
+  bloqueadas as pesquisas pagas, o checkout e qualquer liberação real até
+  resolver direitos upstream, confirmar o plano MapTiler e habilitar as
+  configurações autorizadas. O Smart Grid Live segue preservado.
+
 ## Arquitetura atual
 
 - **Interface Smart Grid:** FastAPI, SQLite local e DataForSEO Live configurável;
@@ -15,9 +83,16 @@ da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 - **Integração externa:** API FastAPI autenticada por bearer token; gera a grade
   3×3 e os nove pontos, recebe resultados idempotentes e disponibiliza scans e
   indicadores sem iniciar consultas pagas.
-- **Landing Page:** formulário servido pelo Smart Grid; encaminhamento de
-  backend ao webhook n8n, resposta/protocolo de diagnóstico, status e relatório
-  protegido por capability.
+- **Landing Page:** interface Live legada preservada em `/landing-legacy`;
+  Landing nativa mantém modo sintético e Express real gated. O Express usa o
+  webhook existente; a fila n8n e o diagnóstico Live da interface continuam
+  separados.
+- **Integração WordPress:** contrato documentado para busca, confirmação,
+  leads, diagnósticos, status, relatórios, pedidos e consulta de pagamento;
+  bearer token é validado no backend e nunca entregue ao navegador.
+- **Persistência comercial:** tabelas SQLite aditivas para leads, diagnósticos,
+  pedidos, eventos, prospects e observações; relatórios usam capability e
+  captura/CSV obedecem aos gates de consentimento/proveniência.
 - **Fila:** PostgreSQL dedicado é a fonte de verdade de requests, orçamento,
   leases, tarefas DataForSEO, resultados e outbox. n8n Self Hosted 1.123.21
   executa seis workflows com Standard Normal, `priority: 1`, `language_code:

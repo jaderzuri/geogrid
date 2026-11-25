@@ -338,6 +338,27 @@ def _nonce_hash(nonce: str) -> str:
 
 
 def _provider_policy(provider_id: str) -> ProviderPolicy:
+    if provider_id == "simulator":
+        return ProviderPolicy(
+            provider_id=provider_id,
+            license_name="Fictional data for isolated functional testing",
+            source_url="https://example.invalid/simulator-data",
+            permanent_storage_fields=frozenset(
+                {
+                    "provider_reference_id",
+                    "name",
+                    "address",
+                    "city",
+                    "state",
+                    "category",
+                    "lat",
+                    "lng",
+                }
+            ),
+            scanner_permanent_fields=frozenset({"lat", "lng"}),
+            attribution="Synthetic sample data — not real businesses",
+            display_map="Simulation only; do not display on public maps",
+        )
     if provider_id == "google_places":
         return ProviderPolicy(
             provider_id=provider_id,
@@ -392,6 +413,10 @@ def _provider_policy(provider_id: str) -> ProviderPolicy:
 
 def _provider_from_config() -> BusinessLocationProvider:
     provider_id = os.environ.get("GEOGRID_BUSINESS_FINDER_PROVIDER", "").strip().lower()
+    if provider_id == "simulator":
+        if not _enabled(os.environ.get("ZURI_COMMERCIAL_SIMULATOR_ENABLED")):
+            raise BusinessFinderProviderDisabledError
+        return CommercialSimulationProvider()
     if provider_id == "google_places":
         api_key = os.environ.get("GEOGRID_GOOGLE_PLACES_API_KEY", "").strip()
         if not api_key:
@@ -413,6 +438,89 @@ def _provider_from_config() -> BusinessLocationProvider:
             raise ProviderError("PROVIDER_DISABLED")
         return NominatimProvider(base_url.rstrip("/"), user_agent)
     raise BusinessFinderProviderDisabledError
+
+
+class CommercialSimulationProvider:
+    """Fictional, deterministic business records for isolated commercial-flow tests."""
+
+    policy = _provider_policy("simulator")
+    _businesses = (
+        BusinessCandidate(
+            reference_id="sim-business-001",
+            name="Café Lume",
+            address="Rua das Acácias, 101",
+            city="São Paulo",
+            state="SP",
+            category="cafeteria",
+            place_id=None,
+            lat=-23.5505,
+            lng=-46.6333,
+            maps_url="https://maps.google.com/?query_place_id=sim-business-001",
+        ),
+        BusinessCandidate(
+            reference_id="sim-business-002",
+            name="Café Lume",
+            address="Avenida Fictícia, 202",
+            city="São Paulo",
+            state="SP",
+            category="cafeteria",
+            place_id=None,
+            lat=-23.5612,
+            lng=-46.6559,
+            maps_url="https://maps.google.com/?query_place_id=sim-business-002",
+        ),
+        BusinessCandidate(
+            reference_id="sim-business-003",
+            name="Oficina Horizonte",
+            address="Rua de Testes, 303",
+            city="Curitiba",
+            state="PR",
+            category="auto repair shop",
+            place_id=None,
+            lat=-25.4284,
+            lng=-49.2733,
+            maps_url="https://maps.google.com/?query_place_id=sim-business-003",
+        ),
+    )
+
+    async def search(self, query: LocationQuery) -> list[BusinessCandidate]:
+        if query.place_id:
+            return [
+                candidate
+                for candidate in self._businesses
+                if candidate.reference_id == query.place_id
+            ]
+        return [
+            candidate
+            for candidate in self._businesses
+            if (
+                not query.business_name
+                or _normalize(query.business_name) in _normalize(candidate.name or "")
+                or _normalize(candidate.name or "") in _normalize(query.business_name)
+            )
+            and (
+                not query.city
+                or _normalize(candidate.city or "") == _normalize(query.city)
+            )
+            and (
+                not query.state
+                or _state_key(candidate.state) == _state_key(query.state)
+            )
+            and (
+                not query.address
+                or _normalize(query.address) in _normalize(candidate.address or "")
+            )
+        ]
+
+    async def resolve(self, reference_id: str) -> BusinessCandidate | None:
+        return next(
+            (
+                candidate
+                for candidate in self._businesses
+                if candidate.reference_id == reference_id
+            ),
+            None,
+        )
 
 
 class GooglePlacesProvider:
@@ -982,7 +1090,7 @@ async def search_business(body: BusinessSearchIn, request: Request):
     except ProviderError as error:
         _provider_call_exception(error, str(body.request_id))
     policy = _policy_for(provider)
-    if query.place_id and policy.provider_id != "google_places":
+    if query.place_id and policy.provider_id not in {"google_places", "simulator"}:
         raise HTTPException(
             status_code=422,
             detail={
@@ -1390,7 +1498,11 @@ async def start_business_diagnostic(body: BusinessDiagnosticIn, request: Request
 
         import asyncio
 
-        asyncio.create_task(main._run_queued(result["scan_ids"]))
+        if policy.provider_id == "simulator":
+            task = main._run_queued(result["scan_ids"], simulated=True)
+        else:
+            task = main._run_queued(result["scan_ids"])
+        asyncio.create_task(task)
     return {
         "request_id": str(body.request_id),
         "scan_ids": result["scan_ids"],

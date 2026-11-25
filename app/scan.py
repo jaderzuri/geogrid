@@ -1,5 +1,6 @@
 """Scan orchestration: grid -> fetch each point (rate limited) -> store -> metrics."""
 import asyncio
+import hashlib
 import logging
 import os
 
@@ -12,6 +13,43 @@ from .metrics import competitor_leaderboard, scan_coverage, scan_metrics
 log = logging.getLogger("geogrid.scan")
 
 MAX_CONSECUTIVE_ERRORS = 5
+
+
+class SimulatedMapsFetcher:
+    """Deterministic, network-free results for isolated commercial-flow tests."""
+
+    provider_id = "simulator"
+
+    def __init__(self, target_name: str):
+        self.target_name = target_name
+
+    async def fetch(self, keyword: str, lat: float, lng: float) -> list[dict]:
+        signature = f"{keyword}:{lat:.6f}:{lng:.6f}".encode("utf-8")
+        target_rank = int(hashlib.sha256(signature).hexdigest()[:4], 16) % 20 + 1
+        results = []
+        for rank in range(1, 21):
+            is_target = rank == target_rank
+            results.append(
+                {
+                    "name": self.target_name if is_target else f"Empresa fictícia {rank}",
+                    "cid": None,
+                    "place_id": None,
+                    "lat": round(lat + rank / 100000, 6),
+                    "lng": round(lng - rank / 100000, 6),
+                    "rating": 4.0 + (rank % 10) / 10,
+                    "reviews": rank * 7,
+                    "category": "resultado sintético",
+                    "address": "Endereço de teste, Brasil",
+                }
+            )
+        return results
+
+    async def resolve_business(self, query: str) -> dict:
+        del query
+        raise RuntimeError("The simulation fetcher cannot resolve real businesses")
+
+    async def close(self) -> None:
+        return None
 
 
 def make_fetcher() -> Fetcher:

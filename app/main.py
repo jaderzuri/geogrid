@@ -30,10 +30,12 @@ from .competitive_metrics import (
 )
 from .fetchers.base import FetchError
 from .business_finder import router as business_finder_router
+from .commercial_api import router as commercial_router
+from .commercial_api import wordpress_router
 from .external_api import ExternalRequestSizeLimitMiddleware, router as external_router
 from .landing import router as landing_router
 from .metrics import point_difficulty, scan_coverage, scan_metrics
-from .scan import compare, create_scans, make_fetcher, run_scan
+from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan
 
 
 # --------------------------------------------------
@@ -103,13 +105,22 @@ app.add_middleware(ExternalRequestSizeLimitMiddleware)
 app.include_router(external_router)
 app.include_router(landing_router)
 app.include_router(business_finder_router)
+app.include_router(commercial_router)
+app.include_router(wordpress_router)
 
 
 @app.middleware("http")
 async def protect_landing_responses(request, call_next):
     response = await call_next(request)
     if request.url.path.startswith(
-        ("/landing", "/diagnostico", "/api/landing/", "/api/business-finder/")
+        (
+            "/landing",
+            "/diagnostico",
+            "/api/landing/",
+            "/api/business-finder/",
+            "/api/commercial/",
+            "/api/wordpress/",
+        )
     ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -224,6 +235,8 @@ def scans(business_id: int | None = None):
 
 async def _run_queued(
     scan_ids: list[int],
+    *,
+    simulated: bool = False,
 ) -> None:
     """Execute queued scans sequentially."""
 
@@ -232,10 +245,55 @@ async def _run_queued(
         for scan_id in scan_ids:
 
             try:
+                scan = db.get_scan(scan_id, with_points=False)
+                if scan is None:
+                    raise ValueError(f"scan {scan_id} does not exist")
+                if scan["status"] in {"done", "failed"}:
+                    log.info("scan %s already finalized; duplicate queue entry skipped", scan_id)
+                    continue
+                if scan["progress"] > 0:
+                    db.finish_scan(
+                        scan_id,
+                        "failed",
+                        None,
+                        None,
+                        "partial scan was not automatically resubmitted",
+                    )
+                    log.warning(
+                        "scan %s has partial work; automatic resubmission was prevented",
+                        scan_id,
+                    )
+                    continue
+                scan_fetcher = (
+                    SimulatedMapsFetcher(scan["business_name"])
+                    if simulated
+                    else fetcher()
+                )
+                provider_id = (
+                    "simulator"
+                    if simulated
+                    else (
+                        "dataforseo_live"
+                        if os.environ.get("GEOGRID_FETCHER", "").strip().lower()
+                        == "dataforseo"
+                        else "playwright"
+                    )
+                )
+                db.set_scan_result_provider(scan_id, provider_id)
                 await run_scan(
                     scan_id,
-                    fetcher(),
+                    scan_fetcher,
                 )
+                if simulated:
+                    from .prospecting import capture_completed_scan
+
+                    try:
+                        capture_completed_scan(scan_id)
+                    except Exception:
+                        log.exception(
+                            "opportunity capture failed for completed scan %s",
+                            scan_id,
+                        )
 
             except Exception:
                 log.exception(

@@ -30,6 +30,15 @@ configuração e os testes de homologação.
 - O workflow 04 expõe estado/progresso somente com capability individual; o
   workflow 05 valida a mesma capability antes de obter o relatório via API
   interna Smart Grid. O navegador pode imprimir o relatório em PDF.
+- O Express comercial pode encaminhar a confirmação já vinculada a um lead ao
+  webhook 01, reutilizando o mesmo `request_id`; o percurso permanece fechado
+  até os gates de licenciamento, pipeline e armazenamento de coordenadas
+  estarem aprovados. O callback de conclusão associa o scan ao diagnóstico e
+  só captura concorrentes dos pontos já recebidos; retenção/exportação depende
+  ainda de `ZURI_PROSPECTING_DATA_USE_APPROVED`. Não há enriquecimento adicional.
+- Professional e Monitor, quando o Express real está habilitado, registram
+  apenas pedido de atendimento assistido. Não há checkout real, recorrência ou
+  processamento Professional 7×7 na fila n8n.
 - A migração 003 registra consentimentos, hashes de capabilities e uma outbox
   durável CRM. Nenhum dado é enviado à T2S até serem fornecidos contratos
   oficiais da conta.
@@ -249,6 +258,16 @@ produção nesta etapa:
 | `ZURI_STATUS_RATE_LIMIT` | Limite de status; padrão 120 por janela. |
 | `ZURI_REPORT_RATE_LIMIT` | Limite de relatório; padrão 20 por janela. |
 | `ZURI_LEADS_RATE_WINDOW_SECONDS` | Janela do limitador; padrão 900 segundos. |
+| `ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED` | Gate explícito da fila paga da Landing; sem `true`, o formulário não encaminha requests ao n8n. |
+| `ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED` | Aprovação documental do uso comercial dos dados DataForSEO, incluindo os limites da seção 7.1. |
+| `ZURI_GOOGLE_UPSTREAM_USE_APPROVED` | Aprovação separada dos termos/direitos aplicáveis do Google, que não são concedidos pela DataForSEO. |
+| `GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED` | Confirmação de plano comercial e limites MapTiler antes do uso em produto comercial. |
+| `ZURI_N8N_EXPRESS_PIPELINE_ENABLED` | Gate adicional para conectar a jornada comercial Express ao webhook n8n existente. |
+| `ZURI_GOOGLE_COORDINATE_STORAGE_APPROVED` | Aprovação separada exigida porque o workflow atual resolve coordenadas pelo Google Places. |
+| `ZURI_PROSPECTING_DATA_USE_APPROVED` | Aprovação separada para reter/exportar candidatos concorrentes derivados dos resultados existentes; não habilita chamadas ou enriquecimento. |
+| `ZURI_PRICE_EXPRESS_BRL` | Preço experimental Express em reais; padrão `0.00`. |
+| `ZURI_PRICE_PROFESSIONAL_BRL` | Preço experimental Professional em reais; padrão `29.90`. |
+| `ZURI_PRICE_MONITOR_BRL` | Preço experimental Monitor em reais; padrão `97.00`. |
 
 Os workflows desligam armazenamento de dados de execução em sucesso/erro nas
 configurações exportadas. Confirme a política de execução, logs do proxy e
@@ -260,6 +279,23 @@ configure a allowlist quando TLS termina no proxy e o backend vê HTTP. Não
 coloque tokens de serviço no navegador. A resposta `202` só ocorre depois que a linha
 foi persistida. Erros de validação devolvem `422`; indisponibilidade da fila
 devolve `503` para permitir retry com a mesma combinação campanha/e-mail.
+
+O catálogo público pode informar os preços experimentais. No simulador,
+Professional gera apenas dados sintéticos e Monitor registra interesse
+assistido. No caminho real, Express usa somente o workflow Standard Normal 3×3
+existente; Professional e Monitor ficam limitados a atendimento assistido,
+sem checkout ou processamento automático. Não definir os gates como `true`
+apenas para liberar a página: o uso upstream de SERP Google permanece sem
+parecer/confirmação, o plano MapTiler deve ser confirmado e a resolução de
+coordenadas exige a aprovação compatível. O processador atual aceita somente
+grids 3×3.
+
+A captura administrativa de leads exige consentimento de marketing para
+exportação CSV. Prospectos sintéticos são marcados como simulação e não são
+exportáveis. Prospectos DataForSEO só podem ser retidos/exportados após a
+aprovação de fonte e armazenamento; a interface admin utiliza sessão de
+operador HttpOnly/SameSite Strict, Secure por padrão. O token de operador e o
+token servidor-a-servidor WordPress devem permanecer no backend.
 
 ## 6. Importar e configurar os workflows
 

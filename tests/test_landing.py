@@ -52,6 +52,10 @@ def _configure(monkeypatch, tmp_path):
     monkeypatch.setenv("ZURI_CAMPAIGN_ID", "event-test")
     monkeypatch.setenv("ZURI_PRIVACY_POLICY_URL", "https://zuri.example.test/privacy")
     monkeypatch.setenv("ZURI_PRIVACY_POLICY_VERSION", "2026-11")
+    monkeypatch.setenv("ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED", "true")
+    monkeypatch.setenv("ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED", "true")
+    monkeypatch.setenv("ZURI_GOOGLE_UPSTREAM_USE_APPROVED", "true")
+    monkeypatch.setenv("GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED", "true")
     monkeypatch.setenv("ZURI_LEADS_RATE_LIMIT", "1000")
     monkeypatch.setenv("ZURI_STATUS_RATE_LIMIT", "1000")
     monkeypatch.setenv("ZURI_REPORT_RATE_LIMIT", "1000")
@@ -117,7 +121,114 @@ def test_public_config_requires_campaign_webhook_and_policy(client):
         "campaign_id": "event-test",
         "privacy_policy_url": "https://zuri.example.test/privacy",
         "privacy_policy_version": "2026-11",
+        "commercial_diagnostics_enabled": True,
+        "commercial_diagnostics_blockers": [],
+        "products": [
+            {
+                "id": "express",
+                "name": "Express",
+                "price_brl": "0.00",
+                "billing": "one_time",
+                "grid_size": 3,
+                "keywords": 1,
+                "assisted": False,
+                "available": False,
+                "checkout_url": None,
+            },
+            {
+                "id": "professional",
+                "name": "Professional",
+                "price_brl": "29.90",
+                "billing": "one_time",
+                "grid_size": 7,
+                "keywords": 1,
+                "assisted": False,
+                "available": False,
+                "checkout_url": None,
+            },
+            {
+                "id": "monitor",
+                "name": "Monitor",
+                "price_brl": "97.00",
+                "billing": "monthly_assisted",
+                "grid_size": None,
+                "keywords": 1,
+                "assisted": True,
+                "available": False,
+                "checkout_url": None,
+            },
+        ],
     }
+
+
+@pytest.mark.parametrize(
+    ("variable", "blocker"),
+    [
+        ("ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED", "commercial_diagnostics_disabled"),
+        ("ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED", "dataforseo_use_not_approved"),
+        ("ZURI_GOOGLE_UPSTREAM_USE_APPROVED", "google_upstream_use_not_approved"),
+        (
+            "GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED",
+            "maptiler_commercial_plan_unconfirmed",
+        ),
+    ],
+)
+def test_commercial_landing_is_disabled_without_explicit_provider_approvals(
+    client, monkeypatch, variable, blocker
+):
+    monkeypatch.delenv(variable)
+
+    config = client.get("/api/landing/config").json()
+
+    assert config["enabled"] is False
+    assert config["commercial_diagnostics_enabled"] is False
+    assert blocker in config["commercial_diagnostics_blockers"]
+
+
+def test_lead_submission_fails_closed_before_n8n_when_commercial_gate_is_incomplete(
+    client, monkeypatch
+):
+    monkeypatch.delenv("ZURI_GOOGLE_UPSTREAM_USE_APPROVED")
+
+    response = client.post("/api/landing/leads", json=_payload())
+
+    assert response.status_code == 503
+    assert "license approval" in response.json()["detail"]
+    assert not MockN8nClient.calls
+
+
+def test_commercial_product_prices_are_configurable_and_checkout_remains_disabled(
+    client, monkeypatch
+):
+    monkeypatch.setenv("ZURI_PRICE_PROFESSIONAL_BRL", "34.90")
+
+    products = client.get("/api/landing/config").json()["products"]
+
+    assert products[0]["price_brl"] == "0.00"
+    assert products[0]["grid_size"] == 3
+    assert products[0]["keywords"] == 1
+    assert products[1]["price_brl"] == "34.90"
+    assert products[1]["grid_size"] == 7
+    assert products[2]["price_brl"] == "97.00"
+    assert products[2]["billing"] == "monthly_assisted"
+    assert all(not product["available"] and product["checkout_url"] is None for product in products)
+
+
+def test_invalid_commercial_price_configuration_is_reported(client, monkeypatch):
+    monkeypatch.setenv("ZURI_PRICE_EXPRESS_BRL", "not-a-price")
+
+    response = client.get("/api/landing/config")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Commercial product configuration is invalid"
+
+
+def test_commercial_price_rejects_fractional_cents(client, monkeypatch):
+    monkeypatch.setenv("ZURI_PRICE_PROFESSIONAL_BRL", "29.999")
+
+    response = client.get("/api/landing/config")
+
+    assert response.status_code == 503
 
 
 def test_submit_valid_lead_forwards_only_to_configured_n8n_and_returns_capability(client):

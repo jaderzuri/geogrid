@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, StrictBool
 
+from .commercial import landing_diagnostics_gate, product_catalog
 
 router = APIRouter(tags=["landing"])
 STATIC = Path(__file__).parent / "static"
@@ -140,7 +141,7 @@ async def _check_rate_limit(request: Request, bucket: str) -> None:
     key = f"{bucket}:{client}"
     now = time.monotonic()
     window = max(60, int(os.environ.get("ZURI_LEADS_RATE_WINDOW_SECONDS", "900")))
-    defaults = {"leads": 600, "status": 120, "report": 20}
+    defaults = {"leads": 600, "status": 120, "report": 20, "admin": 10}
     limit = max(1, int(os.environ.get(f"ZURI_{bucket.upper()}_RATE_LIMIT", str(defaults[bucket]))))
     async with _rate_lock:
         history = _rate_entries[key]
@@ -322,6 +323,11 @@ def landing_page():
     return _page("landing.html")
 
 
+@router.get("/landing-legacy", response_class=HTMLResponse)
+def legacy_landing_page():
+    return _page("landing-legacy.html")
+
+
 @router.get("/diagnostico", response_class=HTMLResponse)
 def diagnostic_page():
     return _page("diagnostic.html")
@@ -345,16 +351,28 @@ def landing_config(request: Request):
     campaigns = _campaign_ids()
     if campaign_id not in campaigns:
         campaign_id = os.environ.get("ZURI_CAMPAIGN_ID", "").strip()
+    diagnostics_gate = landing_diagnostics_gate()
+    try:
+        products = product_catalog()
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Commercial product configuration is invalid",
+        ) from error
     return {
         "enabled": bool(
             os.environ.get("ZURI_N8N_LEADS_WEBHOOK_URL", "").strip()
             and bool(campaign_id)
             and policy_url
             and policy_version
+            and diagnostics_gate["enabled"]
         ),
         "campaign_id": campaign_id,
         "privacy_policy_url": policy_url,
         "privacy_policy_version": policy_version,
+        "commercial_diagnostics_enabled": diagnostics_gate["enabled"],
+        "commercial_diagnostics_blockers": diagnostics_gate["blockers"],
+        "products": products,
     }
 
 
@@ -362,6 +380,11 @@ def landing_config(request: Request):
 async def submit_lead(lead: LeadSubmission, request: Request):
     _check_origin(request)
     await _check_rate_limit(request, "leads")
+    if not landing_diagnostics_gate()["enabled"]:
+        raise HTTPException(
+            status_code=503,
+            detail="Commercial diagnostics are unavailable pending provider and license approval",
+        )
     payload = _normalize_lead(lead)
     if payload["website"]:
         return JSONResponse(

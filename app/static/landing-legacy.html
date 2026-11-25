@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1720">
+  <meta name="description" content="Solicite gratuitamente um diagnóstico de posicionamento local no Google Maps.">
+  <title>Diagnóstico local gratuito | Smart Grid by ZURI</title>
+  <link rel="stylesheet" href="/static/landing.css">
+  <script src="/static/landing.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/landing" aria-label="Smart Grid by ZURI">
+      <span class="brand-mark" aria-hidden="true">Z</span>
+      <span>SMART GRID <b>by ZURI</b></span>
+    </a>
+    <span class="top-note">Diagnóstico gratuito para participantes</span>
+  </header>
+
+  <main class="hero">
+    <section class="intro">
+      <p class="eyebrow">VISIBILIDADE LOCAL, COM DADOS</p>
+      <h1>Como sua empresa aparece no Google Maps?</h1>
+      <p class="lead">Peça seu diagnóstico gratuito. Analisaremos a presença da sua empresa em diferentes pontos da região.</p>
+      <ul class="benefits">
+        <li>Visão geográfica do posicionamento local</li>
+        <li>Processamento assíncrono, sem espera no formulário</li>
+        <li>Um link individual para consultar o andamento</li>
+      </ul>
+      <p class="privacy-note">Usaremos seus dados para preparar e disponibilizar este diagnóstico. Comunicações comerciais são opcionais e dependem da sua autorização específica.</p>
+    </section>
+
+    <section class="form-card" aria-labelledby="form-title">
+      <p class="eyebrow">LEVA MENOS DE 2 MINUTOS</p>
+      <h2 id="form-title">Solicite seu diagnóstico</h2>
+      <form id="lead-form" novalidate>
+        <div class="field-grid">
+          <label>Nome do responsável
+            <input name="contact_name" autocomplete="name" maxlength="200" required>
+          </label>
+          <label>Nome da empresa
+            <input name="company_name" autocomplete="organization" maxlength="200" required>
+          </label>
+          <label>WhatsApp
+            <input name="whatsapp" type="tel" autocomplete="tel" inputmode="tel" maxlength="32" placeholder="+55 11 99999-9999" required>
+          </label>
+          <label>E-mail
+            <input name="email" type="email" autocomplete="email" maxlength="254" required>
+          </label>
+          <label>Cidade
+            <input name="city" autocomplete="address-level2" maxlength="120" required>
+          </label>
+          <label>Estado
+            <select name="state" autocomplete="address-level1" required>
+              <option value="">Selecione</option>
+              <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+              <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+              <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+              <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+              <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+              <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+              <option>SP</option><option>SE</option><option>TO</option>
+            </select>
+          </label>
+          <label class="wide">Link do Google Perfil da Empresa <span class="optional">(opcional)</span>
+            <input name="google_maps_url" type="url" inputmode="url" maxlength="2000" placeholder="https://maps.google.com/...">
+          </label>
+          <label class="wide">Palavra-chave principal
+            <input name="keyword" maxlength="200" placeholder="Ex.: clínica odontológica" required>
+          </label>
+        </div>
+
+        <label class="check-row">
+          <input name="privacy_acknowledged" type="checkbox" required>
+          <span>Li e estou ciente da <a id="privacy-link" href="#" target="_blank" rel="noopener noreferrer">Política de Privacidade</a> e autorizo o uso dos dados para preparar e disponibilizar este diagnóstico.</span>
+        </label>
+        <label class="check-row optional-consent">
+          <input name="marketing_consent" type="checkbox">
+          <span>Autorizo receber comunicações comerciais da ZURI por WhatsApp e e-mail. Esta autorização é opcional e pode ser revogada.</span>
+        </label>
+
+        <div class="bot-field" aria-hidden="true">
+          <label>Deixe este campo vazio<input name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <input type="hidden" name="campaign_id">
+        <p id="form-error" class="message error" role="alert"></p>
+        <button id="submit-button" class="submit-button" type="submit">Quero meu diagnóstico gratuito <span aria-hidden="true">→</span></button>
+        <p class="fine-print">Ao enviar, você receberá um protocolo para acompanhar o processamento. O diagnóstico é preparado automaticamente e pode levar alguns minutos.</p>
+      </form>
+
+      <section id="confirmation" class="confirmation" hidden aria-live="polite">
+        <div class="success-icon" aria-hidden="true">✓</div>
+        <h2>Solicitação recebida</h2>
+        <p>Seu diagnóstico está sendo preparado. Guarde seu protocolo e o link individual abaixo para acompanhar o andamento.</p>
+        <p class="protocol-label">PROTOCOLO</p>
+        <code id="protocol"></code>
+        <a id="status-link" class="submit-button status-link" href="/diagnostico">Acompanhar diagnóstico <span aria-hidden="true">→</span></a>
+        <p id="duplicate-note" class="fine-print" hidden>Encontramos uma solicitação anterior para esta campanha; este protocolo acompanha o mesmo diagnóstico.</p>
+      </section>
+    </section>
+  </main>
+  <footer>© Smart Grid by ZURI · Seus dados são tratados com responsabilidade.</footer>
+</body>
+</html>

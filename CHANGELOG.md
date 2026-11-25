@@ -2,6 +2,61 @@
 
 Alterações relevantes do Smart Grid by ZURI.
 
+## Não lançado — captura comercial e Express condicionado
+
+- Captura de concorrentes dos resultados já persistidos nos scans Express,
+  deduplicação por identidade, histórico de observações e qualificação. Não há
+  enriquecimento ou chamadas pagas adicionais.
+- Adicionado painel administrativo autenticado para filtrar leads/prospectos
+  e exportar CSV; leads exigem consentimento explícito e prospectos reais
+  dependem de aprovação de uso separada. Dados sintéticos não são exportáveis.
+- Ligado o Express comercial ao webhook n8n existente, reutilizando ID
+  idempotente e confirmação da empresa. O caminho real segue fechado pelos
+  gates de licenciamento, coordenadas e configuração operacional.
+- Professional/Monitor no modo real geram somente solicitações assistidas, sem
+  checkout, pagamento ou processamento Professional automático. A pesquisa
+  original acompanha o lead para preservar a validação do token.
+- Testes focados: 42 aprovados; regressão completa: 253 aprovados, um aviso
+  conhecido Starlette/httpx. `node --check`, `git diff --check` e checagem de
+  compatibilidade do call site passaram.
+
+## Não lançado — jornada comercial nativa (simulação)
+
+- Adicionada uma jornada de referência para busca sintética, confirmação
+  explícita da empresa, captura do lead, diagnóstico Express 3×3, relatório
+  protegido, oferta de upgrade, pedido Professional e liberação manual
+  auditada com grade 7×7. Monitor continua em contratação assistida.
+- Criada persistência aditiva para leads, diagnósticos, pedidos e eventos de
+  operador, com limites de utilização/pontos e idempotência. O checkout nunca
+  é tratado como confirmação financeira.
+- Adicionada API WordPress autenticada para busca, confirmação, leads,
+  diagnósticos, status, relatórios, pedidos e consulta de pagamento; contrato
+  em `docs/wordpress-commercial-api.md`.
+- Mantidos desativados checkout real, provedores pagos e gates comerciais.
+  Landing anterior preservada em `/landing-legacy`; nenhum sistema externo foi
+  chamado.
+- Corrigida a persistência de pontos pendentes para não duplicar a grade e
+  impedida a reexecução automática de scans parciais/finalizados.
+- Validação: 62 testes focados antes do teste final do worker, 5 testes
+  comerciais após sua inclusão e regressão completa com 249 aprovados; um
+  aviso de depreciação Starlette/httpx. JavaScript verificado com
+  `node --check`; `git diff --check` sem erros.
+
+## Não lançado — Sprint MVP comercial (proteções parciais)
+
+- Consultados os termos oficiais DataForSEO e MapTiler; a compatibilidade
+  upstream do rastreamento Google Maps e o plano comercial MapTiler não foram
+  confirmados. O produto comercial permanece bloqueado, sem inferir direitos.
+- Adicionado gate fail-closed antes da fila paga da Landing, condicionado a
+  quatro flags explícitas de autorização/contratação; o endpoint público
+  informa os bloqueios e não encaminha à n8n quando não autorizado.
+- Centralizados os preços experimentais e limites declarados de Express,
+  Professional e Monitor; são editáveis por variáveis de ambiente. Checkout e
+  liberação manual permanecem indisponíveis; nenhum produto fica marcado como
+  disponível.
+- Testes focados Landing: 33 aprovados; regressão: 244 aprovados. Nenhuma
+  chamada paga ou integração real.
+
 ## Não lançado — P04 Smart Business Finder (implementado localmente)
 
 - Checkpoint local `f657b8d`, sem push.

@@ -2,6 +2,123 @@
 
 Data: 2026-11-25
 
+## Sprint de lançamento — estado corrente da retomada
+
+- Branch `feature/dataforseo-standard-normal`; HEAD permanece `6aa2101`
+  (`docs: record P04 checkpoint status`). Worktree está dirty e contém o MVP
+  comercial simulado anterior mais as alterações de captura/admin/Express
+  gated; preservar tudo. Três backups `.bak` e `instalar_ida_adaptativo.py`
+  permanecem não rastreados e não devem entrar no checkpoint.
+- Implementada captura idempotente de concorrentes a partir dos pontos já
+  armazenados em scans Express concluídos. Prospects se deduplicam por CID,
+  Place ID, nome/endereço ou nome/localização; novas observações atualizam
+  primeiro/último avistamento, ranking e qualificação. Não há enriquecimento.
+  Dados sintéticos não são exportáveis; uso de prospects DataForSEO exige
+  `ZURI_PROSPECTING_DATA_USE_APPROVED`.
+- Painel admin autenticado com cookie HttpOnly/SameSite Strict, Secure por
+  padrão, expiração de 30 minutos, filtros e CSV. Exportação de leads exige
+  marketing consentido; prospectos exigem gate de proveniência.
+- O Express real só encaminha ao webhook n8n existente após gates de licença,
+  pipeline e armazenamento de coordenadas, com mesma chave idempotente. A
+  associação de scan e captura ocorre após conclusão; não houve chamada paga.
+  Professional/Monitor aceitam pedido assistido sem checkout, confirmação
+  financeira ou processamento automático no modo real.
+- `business_search` acompanha o cadastro do lead e é validado contra
+  `search_request_id` e token de confirmação, preservando a pesquisa original
+  quando o nome canônico do candidato escolhido é diferente.
+- Validação desta retomada: testes focados `tests/test_commercial_api.py`
+  + `tests/test_landing.py`: **42 passed**; regressão Python completa:
+  **253 passed**, com o aviso conhecido Starlette/httpx. `node --check` nos
+  scripts comerciais/admin, `git diff --check`, diagnósticos Pylance sem erros
+  nos quatro arquivos analisados e compatibilidade do call site
+  `create_order` passaram. Os 249 testes do checkpoint anterior precedem estas
+  alterações.
+- A revisão final e regressão estão concluídas. Este conjunto fica destinado
+  ao checkpoint local desta sprint; os backups `.bak` e
+  `instalar_ida_adaptativo.py` permanecem fora. Não fazer push, merge, deploy,
+  consulta paga ou alteração em produção. Depois do checkpoint, entregar o
+  relatório e aguardar autorização para teste real e publicação.
+
+## Jornada comercial simulada — estado atual
+
+- Branch `feature/dataforseo-standard-normal`; sem commit criado nesta etapa.
+  As mudanças locais de código e documentação estão preservadas. Não houve
+  push, merge, deploy, uso de banco/volume de produção nem chamada paga.
+- A jornada de referência foi implementada em modo estritamente sintético:
+  descoberta com candidatos/homônimos, confirmação explícita, lead,
+  diagnóstico Express 3×3, relatório com cobertura, oferta Professional,
+  pedido idempotente, confirmação manual autenticada/auditada e liberação
+  Professional 7×7. Monitor permanece somente assistido.
+- API WordPress servidor-a-servidor, exemplos de payload, autenticação,
+  estados/erros, configuração e rollback: `docs/wordpress-commercial-api.md`.
+  Bearer tokens permanecem no backend; capacidades do lead protegem status e
+  relatórios. Checkout simulado não comprova pagamento.
+- A Landing Page anterior foi preservada em `/landing-legacy`. O scanner Live
+  não foi removido nem substituído. Nenhum fluxo comercial usa DataForSEO,
+  Google Places, MapTiler ou checkout externo em modo simulado.
+- Fixes relacionados: `db.save_point` atualiza pontos pendentes em vez de
+  duplicar pontos da grade; worker não reexecuta scans finalizados e encerra
+  scans parciais sem novo envio. Teste dedicado cobre ambas as proteções.
+- Validação: testes focados comercial/Business Finder/Landing **62 passed**;
+  após adicionar o teste do worker, `tests/test_commercial_api.py` **5 passed**;
+  regressão completa **249 passed**, com o aviso conhecido de depreciação
+  Starlette/httpx. `node --check app/static/commercial.js` e
+  `git diff --check` passaram. Pylance não reportou erros em
+  `commercial_api.py`, `commercial_store.py`, `scan.py` ou nos testes comerciais;
+  os avisos `unused` restantes estão em código legado fora do escopo de correção.
+- A homologação PostgreSQL/n8n do fluxo comercial, WordPress externo, licenças
+  e uso comercial real não foi executada. Continuam bloqueados ativação real,
+  links de pagamento de produção, chamadas pagas e publicação. Antes disso,
+  confirmar direitos upstream/MapTiler, configuração de segredos, limites e
+  sizing no ambiente alvo; homologar o workflow 7×7 caso venha a processá-lo.
+- Próximo passo: aguardar autorização explícita de ativação/publicação. Não
+  repetir auditorias anteriores nem alterar os gates. Para rollback da futura
+  aplicação, desabilitar o simulador e reverter a versão sem apagar banco,
+  tabelas, históricos ou volumes. Nenhuma operação de publicação foi feita.
+
+## Sprint MVP comercial — retomada, estado parcial
+
+- Branch `feature/dataforseo-standard-normal`; base local `6aa2101`. Worktree
+  contém apenas alterações desta retomada nos arquivos listados abaixo e
+  quatro artefatos não rastreados preexistentes (três backups `.bak` e
+  `instalar_ida_adaptativo.py`), preservados sem edição.
+- Revisados os termos oficiais:
+  [FAQ legal DataForSEO](https://dataforseo.com/help-center/quick-answers-to-frequently-asked-legal-questions),
+  [Termos DataForSEO](https://dataforseo.com/terms-of-service) e
+  [Termos MapTiler Cloud](https://www.maptiler.com/terms/cloud/). DataForSEO
+  permite analytics/relatórios comerciais sob §7.1, mas recusa confirmar
+  aplicação a produto específico e não licencia direitos upstream. A
+  compatibilidade do uso de ranking Google Maps não está confirmada. O plano
+  MapTiler da conta ZURI também não foi comprovado; o plano gratuito é para uso
+  não comercial/P&D.
+- Para evitar consultas pagas não autorizadas, `app/commercial.py` adiciona
+  quatro gates fail-closed. `POST /api/landing/leads` retorna `503` antes de
+  chamar n8n se algum gate estiver ausente; `GET /api/landing/config` publica
+  apenas os nomes dos bloqueios e o catálogo experimental. Dados padrão
+  Express/Professional/Monitor são configuráveis com `ZURI_PRICE_*_BRL`.
+  Produtos permanecem `available=false`, sem URL de checkout.
+- Limitações confirmadas: Google Places é descoberta apenas e não pode prover
+  coordenadas para a grade; a fila n8n segue 3×3 e começa requests `queued`;
+  não há pedido de upgrade, fluxo 7×7, integração DOM ou mecanismo de
+  confirmação/liberação manual. Assim, não apresentar o MVP como pronto para
+  vendas. O modo Live não foi alterado.
+- Testes específicos Landing: 33 aprovados. Regressão Python completa:
+  `244 passed`, 1 aviso conhecido de depreciação Starlette/httpx.
+  `app/commercial.py` sem diagnósticos Pylance. `app/landing.py` e
+  `tests/test_landing.py` reportam somente avisos de variável não usada já
+  presentes nos arquivos; nenhum erro de análise.
+- Nenhum teste integrado PostgreSQL/n8n foi repetido: a alteração não muda
+  schema nem workflow e o fluxo comercial permanece bloqueado. Nenhuma chamada
+  paga, mudança de banco, deploy, commit ou push ocorreu. Homologação comercial
+  ponta a ponta e rollback não foram executados porque ainda não existe fluxo
+  de venda/liberação operacional.
+- Arquivos alterados: `app/commercial.py`, `app/landing.py`,
+  `tests/test_landing.py`, `docs/n8n-setup.md`, `ROADMAP.md`, `TASKS.md`,
+  `PROGRESS.md`, `CHANGELOG.md` e este handoff. Próxima retomada: resolver
+  direitos upstream/contrato e plano MapTiler; definir fonte licenciada de
+  coordenadas e contrato de Professional 7×7/ordem manual antes de implementar
+  links de pagamento. Não ativar gates por variável sem as evidências acima.
+
 ## P04 — implementação local e validação
 
 - Branch `feature/dataforseo-standard-normal`; checkpoint P04 local

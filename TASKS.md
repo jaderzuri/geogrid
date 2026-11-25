@@ -1,5 +1,58 @@
 # Smart Grid by ZURI — Próximas tarefas
 
+## Sprint MVP comercial — jornada simulada implementada
+
+- [x] Capturar leads diretos e consolidar concorrentes com identidade estável
+  dos scans já concluídos; sem chamadas de enriquecimento.
+- [x] Bloquear armazenamento/exportação comercial de prospectos DataForSEO
+  sem gate separado; manter dados sintéticos inelegíveis para CSV.
+- [x] Adicionar painel administrativo autenticado, filtros e exportação CSV
+  respeitando consentimento de marketing e autorização da fonte.
+- [x] Conectar Express ao webhook n8n existente, reaproveitando request ID e
+  confirmação, sob gates de Express e armazenamento de coordenadas.
+- [x] Manter Professional/Monitor como atendimento assistido no caminho real,
+  sem checkout, confirmação de pagamento ou diagnóstico automático.
+- [x] Preservar a pesquisa original no payload do lead para validar a
+  confirmação quando o nome canônico do candidato divergir.
+- [x] Validar focado: `tests/test_commercial_api.py` e
+  `tests/test_landing.py` (42 aprovados); `node --check` e `git diff --check`.
+- [x] Executar regressão Python consolidada: **253 aprovados**, um aviso
+  conhecido Starlette/httpx.
+- [x] Revisar a lista final do checkpoint; excluir os backups locais e
+  `instalar_ida_adaptativo.py`.
+
+- [x] Verificar termos oficiais DataForSEO e MapTiler e registrar as
+  limitações; nenhuma licença de provedor upstream foi inferida.
+- [x] Bloquear a entrada da Landing na fila paga sem aprovações explícitas para
+  o fluxo comercial, uso DataForSEO, termos upstream Google e plano MapTiler.
+- [x] Centralizar os preços experimentais no catálogo do backend e manter
+  disponibilidade e configuração dos produtos no backend.
+- [x] Implementar busca sintética de empresas, apresentação de homônimos,
+  confirmação explícita, jornada alternativa assistida e bloqueio de
+  diagnóstico sem empresa confirmada.
+- [x] Implementar lead, diagnóstico Express 3×3, relatório simplificado
+  protegido, oferta de upgrade, pedido Professional e grade sintética 7×7
+  liberada somente por operador após confirmação manual auditada.
+- [x] Implementar controles de capacidade/pontos, idempotência e persistência
+  aditiva de pedidos e eventos de operador.
+- [x] Documentar contratos autenticados para integração WordPress em
+  `docs/wordpress-commercial-api.md`.
+- [x] Preservar a interface Live anterior em `/landing-legacy`; nenhuma chamada
+  paga ou credencial de fornecedor usada no simulador.
+- [ ] Obter parecer/confirmação documental para uso de SERP Google Maps em
+  relatórios comerciais e confirmar plano comercial, quotas e atribuição
+  MapTiler. Não ativar apenas definindo variáveis.
+- [ ] Validar os contratos WordPress com integração homologada e autenticação
+  por canal servidor-a-servidor antes de expor a API fora do ambiente simulado.
+- [ ] Adaptar e homologar separadamente o workflow PostgreSQL/n8n para
+  Professional 7×7; o simulador SQLite não altera o workflow Standard atual.
+- [ ] Configurar e revisar os gates de provedor/upstream/MapTiler e os links DOM
+  antes de qualquer ativação comercial. Checkout não comprova pagamento.
+- [ ] Homologar o caminho n8n em ambiente isolado com simuladores após esta
+  integração; nenhuma chamada paga/real foi realizada.
+- [ ] Resolver os bloqueios contratuais de upstream e MapTiler e obter
+  autorização explícita antes da ativação, publicação ou teste real.
+
 ## Checkpoint P01 a P03
 
 - [x] Validar autorização única e reservas em PostgreSQL isolado, incluindo

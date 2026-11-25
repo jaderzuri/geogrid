@@ -28,7 +28,9 @@ class ExternalRequestSizeLimitMiddleware:
 
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
-        if scope["type"] != "http" or not path.startswith(("/api/external/", "/api/landing/")):
+        if scope["type"] != "http" or not path.startswith(
+            ("/api/external/", "/api/landing/", "/api/commercial/", "/api/wordpress/")
+        ):
             await self.app(scope, receive, send)
             return
 
@@ -420,6 +422,11 @@ def finish_scan(
         db.ExternalScanNotFoundError,
     ) as error:
         _raise_external_error(error)
+    opportunity_capture = None
+    if result["scan"]["status"] == "done":
+        from .prospecting import capture_completed_scan
+
+        opportunity_capture = capture_completed_scan(int(result["scan"]["id"]))
     return {
         "scan_id": scan_id,
         "status": result["scan"]["external_status"],
@@ -428,6 +435,7 @@ def finish_scan(
         "finished": result["scan"]["external_finished"],
         "completion_reason": result["scan"]["completion_reason"],
         "idempotent": result["idempotent"],
+        "opportunity_capture": opportunity_capture,
     }
 
 

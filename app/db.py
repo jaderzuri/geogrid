@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS scans (
     error TEXT,
     created TEXT NOT NULL,
     finished TEXT,
-    origin TEXT NOT NULL DEFAULT 'web'
+    origin TEXT NOT NULL DEFAULT 'web',
+    result_provider TEXT NOT NULL DEFAULT 'unknown'
 );
 CREATE TABLE IF NOT EXISTS points (
     id INTEGER PRIMARY KEY,
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS external_scans (
     finished TEXT,
     completion_mode TEXT,
     completion_reason TEXT,
+    commercial_diagnostic_id TEXT REFERENCES commercial_diagnostics(id),
     UNIQUE (client_id, external_request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_points_scan ON points(scan_id);
@@ -161,6 +163,129 @@ CREATE TABLE IF NOT EXISTS business_finder_diagnostics (
     scan_ids TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS commercial_leads (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    payload_hash TEXT NOT NULL,
+    status_token_hash TEXT NOT NULL UNIQUE,
+    confirmation_token_hash TEXT,
+    lead_type TEXT NOT NULL CHECK (lead_type IN ('confirmed', 'assisted')),
+    business_confirmed INTEGER NOT NULL CHECK (business_confirmed IN (0, 1)),
+    business_search_request_id TEXT,
+    business_id INTEGER REFERENCES businesses(id),
+    business_name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    state TEXT NOT NULL,
+    address TEXT,
+    google_maps_url TEXT,
+    contact_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    whatsapp TEXT NOT NULL,
+    campaign_id TEXT NOT NULL,
+    privacy_acknowledged INTEGER NOT NULL CHECK (privacy_acknowledged IN (0, 1)),
+    privacy_policy_version TEXT NOT NULL,
+    marketing_consent INTEGER NOT NULL CHECK (marketing_consent IN (0, 1)),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS commercial_diagnostics (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    request_hash TEXT NOT NULL,
+    lead_id TEXT NOT NULL REFERENCES commercial_leads(id),
+    product_id TEXT NOT NULL CHECK (product_id IN ('express', 'professional')),
+    business_id INTEGER REFERENCES businesses(id),
+    scan_id INTEGER UNIQUE REFERENCES scans(id),
+    grid_size INTEGER NOT NULL CHECK (grid_size IN (3, 7)),
+    keyword TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('reserved', 'queued', 'running', 'done', 'failed')),
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS commercial_orders (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    request_hash TEXT NOT NULL,
+    lead_id TEXT NOT NULL REFERENCES commercial_leads(id),
+    source_diagnostic_id TEXT NOT NULL REFERENCES commercial_diagnostics(id),
+    product_id TEXT NOT NULL CHECK (product_id IN ('professional', 'monitor')),
+    amount_brl TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('awaiting_payment_confirmation', 'payment_confirmed', 'released', 'assisted')
+    ),
+    payment_reference TEXT,
+    operator_id TEXT,
+    diagnostic_id TEXT REFERENCES commercial_diagnostics(id),
+    created_at TEXT NOT NULL,
+    payment_confirmed_at TEXT,
+    released_at TEXT
+);
+CREATE TABLE IF NOT EXISTS commercial_order_events (
+    id INTEGER PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES commercial_orders(id),
+    actor_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    details TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_commercial_diagnostics_lead
+    ON commercial_diagnostics(lead_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_leads_one_express
+    ON commercial_diagnostics(lead_id) WHERE product_id = 'express';
+CREATE INDEX IF NOT EXISTS idx_commercial_orders_lead
+    ON commercial_orders(lead_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_commercial_orders_one_product_per_lead
+    ON commercial_orders(lead_id, product_id);
+CREATE INDEX IF NOT EXISTS idx_commercial_order_events_order
+    ON commercial_order_events(order_id, id);
+CREATE TABLE IF NOT EXISTS commercial_prospects (
+    id INTEGER PRIMARY KEY,
+    identity_hash TEXT NOT NULL UNIQUE,
+    identity_type TEXT NOT NULL CHECK (
+        identity_type IN ('cid', 'place_id', 'name_address', 'name_location')
+    ),
+    source_provider TEXT NOT NULL,
+    source_license TEXT NOT NULL,
+    data_mode TEXT NOT NULL CHECK (data_mode IN ('synthetic', 'authorized')),
+    storage_authorized INTEGER NOT NULL CHECK (storage_authorized IN (0, 1)),
+    export_eligible INTEGER NOT NULL CHECK (export_eligible IN (0, 1)),
+    name TEXT NOT NULL,
+    cid TEXT,
+    place_id TEXT,
+    address TEXT,
+    category TEXT,
+    lat REAL,
+    lng REAL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0 CHECK (observation_count >= 0),
+    best_rank INTEGER,
+    qualification TEXT NOT NULL CHECK (
+        qualification IN ('priority', 'standard', 'low', 'simulation')
+    ),
+    crm_sync_status TEXT NOT NULL DEFAULT 'not_configured'
+);
+CREATE TABLE IF NOT EXISTS commercial_prospect_observations (
+    id INTEGER PRIMARY KEY,
+    prospect_id INTEGER NOT NULL REFERENCES commercial_prospects(id),
+    lead_id TEXT REFERENCES commercial_leads(id),
+    diagnostic_id TEXT REFERENCES commercial_diagnostics(id),
+    scan_id INTEGER NOT NULL REFERENCES scans(id),
+    keyword TEXT NOT NULL,
+    point_row INTEGER NOT NULL,
+    point_col INTEGER NOT NULL,
+    result_rank INTEGER NOT NULL,
+    record_status TEXT NOT NULL DEFAULT 'previously_known' CHECK (
+        record_status IN ('new', 'previously_known')
+    ),
+    source_provider TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    UNIQUE (prospect_id, scan_id, point_row, point_col)
+);
+CREATE INDEX IF NOT EXISTS idx_commercial_prospect_seen
+    ON commercial_prospects(last_seen_at DESC, qualification);
+CREATE INDEX IF NOT EXISTS idx_commercial_prospect_observations_scan
+    ON commercial_prospect_observations(scan_id);
+CREATE INDEX IF NOT EXISTS idx_commercial_prospect_observations_lead
+    ON commercial_prospect_observations(lead_id, observed_at DESC);
 """
 
 
@@ -590,6 +715,34 @@ def init_db() -> None:
         scan_columns = {row["name"] for row in c.execute("PRAGMA table_info(scans)")}
         if "origin" not in scan_columns:
             c.execute("ALTER TABLE scans ADD COLUMN origin TEXT NOT NULL DEFAULT 'web'")
+        if "result_provider" not in scan_columns:
+            c.execute(
+                "ALTER TABLE scans ADD COLUMN result_provider TEXT NOT NULL DEFAULT 'unknown'"
+            )
+        external_scan_columns = {
+            row["name"] for row in c.execute("PRAGMA table_info(external_scans)")
+        }
+        if "commercial_diagnostic_id" not in external_scan_columns:
+            c.execute(
+                "ALTER TABLE external_scans ADD COLUMN commercial_diagnostic_id "
+                "TEXT REFERENCES commercial_diagnostics(id)"
+            )
+        diagnostic_columns = {
+            row["name"] for row in c.execute("PRAGMA table_info(commercial_diagnostics)")
+        }
+        for name in ("confirmed_provider_id", "confirmed_reference_id"):
+            if name not in diagnostic_columns:
+                c.execute(f"ALTER TABLE commercial_diagnostics ADD COLUMN {name} TEXT")
+        prospect_observation_columns = {
+            row["name"]
+            for row in c.execute("PRAGMA table_info(commercial_prospect_observations)")
+        }
+        if "record_status" not in prospect_observation_columns:
+            c.execute(
+                "ALTER TABLE commercial_prospect_observations ADD COLUMN "
+                "record_status TEXT NOT NULL DEFAULT 'previously_known' "
+                "CHECK (record_status IN ('new', 'previously_known'))"
+            )
         c.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_points_external_task_id "
             "ON points(external_task_id) WHERE external_task_id IS NOT NULL"
@@ -653,6 +806,11 @@ def register_external_business(
                 row = c.execute(
                     "SELECT * FROM businesses WHERE cid = ?",
                     (business["cid"],),
+                ).fetchone()
+            if row is None and business.get("place_id"):
+                row = c.execute(
+                    "SELECT * FROM businesses WHERE place_id = ? ORDER BY id LIMIT 1",
+                    (business["place_id"],),
                 ).fetchone()
             if row:
                 saved = dict(row)
@@ -743,12 +901,34 @@ def create_external_scan(
             raise ExternalScanNotFoundError
         business = dict(business_row)
         grid_size, spacing_km = 3, 1.0
+        commercial_diagnostic = c.execute(
+            "SELECT d.*, l.business_confirmed, l.business_id AS lead_business_id "
+            "FROM commercial_diagnostics d "
+            "JOIN commercial_leads l ON l.id = d.lead_id "
+            "WHERE d.request_id = ?",
+            (external_request_id,),
+        ).fetchone()
+        if commercial_diagnostic:
+            if (
+                commercial_diagnostic["product_id"] != "express"
+                or commercial_diagnostic["status"] not in {"reserved", "queued"}
+                or not commercial_diagnostic["business_confirmed"]
+                or commercial_diagnostic["grid_size"] != 3
+                or commercial_diagnostic["keyword"] != keyword
+                or commercial_diagnostic["confirmed_provider_id"] != "google_places"
+                or commercial_diagnostic["confirmed_reference_id"] != business.get("place_id")
+                or commercial_diagnostic["lead_business_id"] not in (None, business["id"])
+                or commercial_diagnostic["business_id"] not in (None, business["id"])
+            ):
+                raise ExternalConflictError(
+                    "external scan does not match the confirmed Express diagnostic"
+                )
         created = now()
         cursor = c.execute(
             "INSERT INTO scans "
             "(business_id, keyword, grid_size, spacing_km, center_lat, center_lng, "
-            "status, progress, total, created, origin) "
-            "VALUES (?,?,?,?,?,?,'queued',0,9,?,'external')",
+            "status, progress, total, created, origin, result_provider) "
+            "VALUES (?,?,?,?,?,?,'queued',0,9,?,'external','dataforseo_standard')",
             (
                 business["id"],
                 keyword,
@@ -764,8 +944,9 @@ def create_external_scan(
         c.execute(
             "INSERT INTO external_scans "
             "(external_id, scan_id, client_id, external_request_id, "
-            "external_business_id, language_code, status, created, updated) "
-            "VALUES (?,?,?,?,?,?,'queued',?,?)",
+            "external_business_id, language_code, status, created, updated, "
+            "commercial_diagnostic_id) "
+            "VALUES (?,?,?,?,?,?,'queued',?,?,?)",
             (
                 external_id,
                 scan_id,
@@ -775,8 +956,19 @@ def create_external_scan(
                 language_code,
                 created,
                 created,
+                commercial_diagnostic["id"] if commercial_diagnostic else None,
             ),
         )
+        if commercial_diagnostic:
+            c.execute(
+                "UPDATE commercial_diagnostics SET business_id = ?, scan_id = ?, "
+                "status = 'queued' WHERE id = ?",
+                (business["id"], scan_id, commercial_diagnostic["id"]),
+            )
+            c.execute(
+                "UPDATE commercial_leads SET business_id = ? WHERE id = ?",
+                (business["id"], commercial_diagnostic["lead_id"]),
+            )
         from .grid import make_grid
 
         grid = make_grid(
@@ -811,6 +1003,7 @@ def self_external_scan(
         "e.external_business_id, e.language_code, e.status AS external_status, "
         "e.created AS external_created, e.updated AS external_updated, "
         "e.finished AS external_finished, e.completion_mode, e.completion_reason, "
+        "e.commercial_diagnostic_id, "
         "s.*, b.name AS business_name, b.cid AS business_cid, "
         "b.place_id AS business_place_id, b.category AS business_category "
         "FROM external_scans e JOIN scans s ON s.id = e.scan_id "
@@ -1059,6 +1252,16 @@ def complete_external_scan(
                 external_id,
             ),
         )
+        diagnostic_id = scan.get("commercial_diagnostic_id")
+        if diagnostic_id:
+            c.execute(
+                "UPDATE commercial_diagnostics SET status = ? WHERE id = ? "
+                "AND status IN ('reserved', 'queued', 'running')",
+                (
+                    "done" if status == "done" else "failed",
+                    diagnostic_id,
+                ),
+            )
         return {
             "scan": self_external_scan(c, client_id, external_id),
             "idempotent": False,
@@ -1085,6 +1288,17 @@ def create_scan(business_id: int, keyword: str, grid_size: int, spacing_km: floa
         return cur.lastrowid
 
 
+def set_scan_result_provider(scan_id: int, provider_id: str) -> None:
+    provider_id = provider_id.strip().lower()
+    if not provider_id or len(provider_id) > 100:
+        raise ValueError("provider_id must contain between 1 and 100 characters")
+    with connect() as c:
+        c.execute(
+            "UPDATE scans SET result_provider = ? WHERE id = ?",
+            (provider_id, scan_id),
+        )
+
+
 def save_point(
     scan_id: int,
     p,
@@ -1098,12 +1312,44 @@ def save_point(
     api_status_message: str | None = None,
 ) -> None:
     with connect() as c:
-        c.execute(
-            "INSERT INTO points (scan_id, row, col, lat, lng, rank, status, error, results,"
-            " error_category, api_status_code, api_status_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (scan_id, p.row, p.col, p.lat, p.lng, rank, status, error,
-             json.dumps(results) if results is not None else None,
-             error_category, api_status_code, api_status_message))
+        c.execute("BEGIN IMMEDIATE")
+        existing = c.execute(
+            "SELECT id, status FROM points WHERE scan_id = ? AND row = ? AND col = ? "
+            "ORDER BY id LIMIT 1",
+            (scan_id, p.row, p.col),
+        ).fetchone()
+        if existing and existing["status"] != "pending":
+            return
+        values = (
+            p.lat,
+            p.lng,
+            rank,
+            status,
+            error,
+            json.dumps(results) if results is not None else None,
+            error_category,
+            api_status_code,
+            api_status_message,
+        )
+        if existing:
+            c.execute(
+                "UPDATE points SET lat = ?, lng = ?, rank = ?, status = ?, error = ?, "
+                "results = ?, error_category = ?, api_status_code = ?, "
+                "api_status_message = ? WHERE id = ?",
+                (*values, existing["id"]),
+            )
+        else:
+            c.execute(
+                "INSERT INTO points (scan_id, row, col, lat, lng, rank, status, error, results,"
+                " error_category, api_status_code, api_status_message) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    scan_id,
+                    p.row,
+                    p.col,
+                    *values,
+                ),
+            )
         c.execute("UPDATE scans SET progress = progress + 1 WHERE id = ?", (scan_id,))
 
 
