@@ -49,7 +49,7 @@ jobs:
           from app.main import app
           from app.metrics import scan_metrics, point_difficulty
 
-          paths = [r.path for r in app.routes]
+          paths = app.openapi()["paths"]
 
           assert "/api/scans/{scan_id}/analysis" in paths
           assert callable(scan_metrics)
