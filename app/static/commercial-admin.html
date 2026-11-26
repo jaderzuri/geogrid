@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Oportunidades comerciais | ZURI</title>
+  <link rel="stylesheet" href="/static/commercial-admin.css">
+  <script src="/static/commercial-admin.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">SMART GRID BY ZURI</p>
+        <h1>Oportunidades comerciais</h1>
+      </div>
+      <button id="logout" class="button secondary" type="button" hidden>Sair</button>
+    </header>
+
+    <section id="login-panel" class="panel">
+      <h2>Acesso de operador</h2>
+      <p>Use uma conexão HTTPS e suas credenciais de operador autorizadas.</p>
+      <form id="login-form">
+        <label for="operator-id">ID do operador</label>
+        <input id="operator-id" autocomplete="username" required minlength="2" maxlength="100">
+        <label for="operator-token">Token de operador</label>
+        <input id="operator-token" type="password" autocomplete="current-password" required minlength="32">
+        <button class="button" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <section id="admin-panel" hidden>
+      <nav class="tabs" aria-label="Tipo de oportunidade">
+        <button class="tab active" type="button" data-kind="leads">Leads diretos</button>
+        <button class="tab" type="button" data-kind="prospects">Empresas candidatas</button>
+      </nav>
+      <section class="panel">
+        <div class="filters">
+          <label>
+            Buscar
+            <input id="query" type="search" maxlength="120" placeholder="Empresa, cidade ou contato">
+          </label>
+          <label id="consent-filter">
+            Consentimento de marketing
+            <select id="marketing-consent">
+              <option value="">Todos</option>
+              <option value="true">Concedido</option>
+              <option value="false">Não concedido</option>
+            </select>
+          </label>
+          <label id="qualification-filter" hidden>
+            Qualificação
+            <select id="qualification">
+              <option value="">Todas</option>
+              <option value="priority">Prioridade</option>
+              <option value="standard">Padrão</option>
+              <option value="low">Baixa</option>
+              <option value="simulation">Simulação</option>
+            </select>
+          </label>
+          <label id="provider-filter" hidden>
+            Fonte
+            <input id="provider" maxlength="100" placeholder="dataforseo_standard">
+          </label>
+          <button id="search" class="button" type="button">Filtrar</button>
+          <a id="export" class="button secondary" href="/api/commercial/admin/export/leads.csv">Exportar CSV elegível</a>
+        </div>
+        <p id="notice" role="status" aria-live="polite"></p>
+        <div class="table-wrap">
+          <table>
+            <thead id="table-head"></thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+    <p id="message" class="message" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

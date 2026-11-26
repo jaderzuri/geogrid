@@ -9,6 +9,27 @@ class FetchError(Exception):
     """A point could not be scanned (blocked, CAPTCHA, timeout)."""
 
 
+class FetchStatusError(FetchError):
+    """A provider returned a recognized non-success outcome for a point."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        outcome: str = "error",
+        category: str = "technical_error",
+        api_status_code: int | None = None,
+        api_status_message: str | None = None,
+        results: list[dict] | None = None,
+    ):
+        super().__init__(message)
+        self.outcome = outcome
+        self.category = category
+        self.api_status_code = api_status_code
+        self.api_status_message = api_status_message
+        self.results = results or []
+
+
 class Fetcher(Protocol):
     async def fetch(self, keyword: str, lat: float, lng: float) -> list[dict]:
         """Ordered organic results (ads excluded), at most MAX_RESULTS dicts with keys:

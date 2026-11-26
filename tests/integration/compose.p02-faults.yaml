@@ -1,0 +1,15 @@
+services:
+  n8n-init:
+    environment:
+      P02_INJECT_FAULTS: "1"
+    volumes:
+      - ./p02-faults-bootstrap.cjs:/bootstrap/p02-faults-bootstrap.cjs:ro
+  n8n:
+    environment:
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+  mock-services:
+    image: geogrid-p02-faults-mock:latest
+  test-runner:
+    volumes:
+      - ./test_p02_n8n_faults.mjs:/app/test_p02_n8n_faults.mjs:ro
+      - n8n-state:/n8n-state

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1720">
+  <meta name="description" content="Encontre sua empresa e consulte um diagnóstico local em ambiente de homologação.">
+  <title>Smart Grid by ZURI | Diagnóstico local</title>
+  <link rel="stylesheet" href="/static/landing.css">
+  <script src="/static/commercial.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/landing" aria-label="Smart Grid by ZURI">
+      <span class="brand-mark" aria-hidden="true">Z</span>
+      <span>SMART GRID <b>by ZURI</b></span>
+    </a>
+    <span class="top-note" id="environment-note">Diagnóstico local</span>
+  </header>
+
+  <main class="hero">
+    <section class="intro">
+      <p class="eyebrow">VISIBILIDADE LOCAL, COM DADOS</p>
+      <h1>Como sua empresa aparece na sua região?</h1>
+      <p class="lead">Encontre a empresa correta, confirme a identidade e acompanhe uma simulação de diagnóstico geográfico.</p>
+      <ul class="benefits">
+        <li>Escolha explícita entre empresas homônimas</li>
+        <li>Grade Express 3×3 e opção Professional 7×7</li>
+        <li>Relatório e status protegidos por uma capability privada</li>
+      </ul>
+      <p class="privacy-note">Esta experiência de homologação usa empresas e resultados sintéticos. Nenhuma consulta paga ou checkout real é realizado.</p>
+      <p id="commercial-unavailable" class="message error" role="status" hidden></p>
+      <section id="product-catalog" aria-label="Produtos comerciais"></section>
+    </section>
+
+    <section class="form-card" aria-labelledby="search-title">
+      <p class="eyebrow">ETAPA 1 · LOCALIZAR</p>
+      <h2 id="search-title">Encontre sua empresa</h2>
+      <form id="search-form">
+        <div class="field-grid">
+          <label>Nome da empresa
+            <input name="business_name" autocomplete="organization" maxlength="200" required>
+          </label>
+          <label>Cidade
+            <input name="city" autocomplete="address-level2" maxlength="120" required>
+          </label>
+          <label>Estado
+            <select name="state" autocomplete="address-level1" required>
+              <option value="">Selecione</option>
+              <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+              <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+              <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+              <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+              <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+              <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+              <option>SP</option><option>SE</option><option>TO</option>
+            </select>
+          </label>
+          <label class="wide">Endereço complementar <span class="optional">(opcional)</span>
+            <input name="address" autocomplete="street-address" maxlength="300">
+          </label>
+          <label class="wide">Link do Google Perfil da Empresa / Google Maps <span class="optional">(opcional)</span>
+            <input name="google_maps_url" type="url" inputmode="url" maxlength="2000" placeholder="https://maps.google.com/...">
+          </label>
+        </div>
+        <p id="search-error" class="message error" role="alert"></p>
+        <button id="search-button" class="submit-button" type="submit">Pesquisar empresa <span aria-hidden="true">→</span></button>
+      </form>
+
+      <section id="candidate-section" hidden aria-live="polite">
+        <h3>Confirme a empresa correta</h3>
+        <p>Confira o endereço antes de continuar. O nome, sozinho, não confirma a identidade.</p>
+        <div id="candidate-list"></div>
+      </section>
+
+      <section id="lead-section" hidden>
+        <p class="eyebrow" id="lead-eyebrow">ETAPA 2 · CONFIRMAR</p>
+        <h3 id="lead-title">Seus dados de contato</h3>
+        <p id="selected-business"></p>
+        <form id="lead-form">
+          <input name="business_name" type="hidden">
+          <div class="field-grid">
+            <label>Nome do responsável
+              <input name="contact_name" autocomplete="name" maxlength="200" required>
+            </label>
+            <label>WhatsApp
+              <input name="whatsapp" type="tel" autocomplete="tel" inputmode="tel" maxlength="32" placeholder="+55 11 99999-9999" required>
+            </label>
+            <label class="wide">E-mail
+              <input name="email" type="email" autocomplete="email" maxlength="254" required>
+            </label>
+            <label class="wide" id="keyword-field">Palavra-chave principal
+              <input name="keyword" maxlength="200" placeholder="Ex.: cafeteria em São Paulo" required>
+            </label>
+          </div>
+          <label class="check-row">
+            <input name="privacy_acknowledged" type="checkbox" required>
+            <span>Li e estou ciente da <a id="privacy-link" href="/privacy" target="_blank" rel="noopener noreferrer">Política de Privacidade</a> e autorizo o uso dos dados para preparar e disponibilizar esta solicitação.</span>
+          </label>
+          <label class="check-row optional-consent">
+            <input name="marketing_consent" type="checkbox">
+            <span>Autorizo receber comunicações comerciais da ZURI. Esta autorização é opcional e pode ser revogada.</span>
+          </label>
+          <div class="bot-field" aria-hidden="true">
+            <label>Deixe este campo vazio<input name="website" tabindex="-1" autocomplete="off"></label>
+          </div>
+          <p id="lead-error" class="message error" role="alert"></p>
+          <button id="lead-button" class="submit-button" type="submit">Preparar diagnóstico Express <span aria-hidden="true">→</span></button>
+        </form>
+      </section>
+
+      <section id="progress-section" hidden aria-live="polite">
+        <h3 id="progress-title">Diagnóstico em preparação</h3>
+        <p id="progress-message"></p>
+        <button id="refresh-button" class="submit-button" type="button">Atualizar andamento</button>
+      </section>
+
+      <section id="report-section" hidden aria-live="polite">
+        <h3 id="report-title">Relatório</h3>
+        <div id="report-content"></div>
+        <div id="upgrade-actions" hidden>
+          <button id="professional-button" class="submit-button" type="button">Solicitar Professional</button>
+          <button id="monitor-button" class="submit-button" type="button">Solicitar atendimento Monitor</button>
+          <p id="order-message" class="message" role="status"></p>
+        </div>
+      </section>
+    </section>
+  </main>
+  <footer>© Smart Grid by ZURI · Homologação comercial com dados sintéticos.</footer>
+</body>
+</html>

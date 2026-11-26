@@ -1,0 +1,18 @@
+services:
+  n8n-init:
+    environment:
+      P02_INJECT_FAULTS: "1"
+    volumes:
+      - ./p02-faults-bootstrap.cjs:/bootstrap/p02-faults-bootstrap.cjs:ro
+  n8n:
+    environment:
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+  mock-services:
+    image: geogrid-p02-faults-mock:latest
+  test-runner:
+    environment:
+      P03_RECOVERY_PHASE: "${P03_RECOVERY_PHASE:-single}"
+      P03_REQUEST_ID: "${P03_REQUEST_ID:-}"
+    volumes:
+      - ./test_p03_n8n_recovery.mjs:/app/test_p03_n8n_recovery.mjs:ro
+      - n8n-state:/n8n-state

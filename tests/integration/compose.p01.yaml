@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: geogrid_p01
+      POSTGRES_USER: p01_test
+      POSTGRES_PASSWORD: p01-test-only-password
+    volumes:
+      - ../../workflows/n8n/sql/001-schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+      - ../../workflows/n8n/sql/002-functions.sql:/docker-entrypoint-initdb.d/002-functions.sql:ro
+      - ../../workflows/n8n/sql/003-landing-crm-capability.sql:/docker-entrypoint-initdb.d/003-landing-crm-capability.sql:ro
+      - ../../workflows/n8n/sql/004-capability-lifecycle-and-crm-dispatch.sql:/docker-entrypoint-initdb.d/004-capability-lifecycle-and-crm-dispatch.sql:ro
+      - ./005-homologation-budget.sql:/docker-entrypoint-initdb.d/005-homologation-budget.sql:ro
+      - postgres-state:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U p01_test -d geogrid_p01"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [isolated]
+    restart: "no"
+  test-runner:
+    image: integration-test-runner:latest
+    environment:
+      PGHOST: postgres
+      PGUSER: p01_test
+      PGDATABASE: geogrid_p01
+      PGPASSWORD: p01-test-only-password
+    volumes:
+      - ./test_p01_postgres.mjs:/app/test_p01_postgres.mjs:ro
+      - ../../workflows/n8n/sql/006-paid-submission-authorization-and-budget.sql:/app/migration.sql:ro
+    command: ["node", "/app/test_p01_postgres.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated]
+    restart: "no"
+networks:
+  isolated:
+    internal: true
+volumes:
+  postgres-state:
+    name: ${P01_VOLUME_NAME:-geogrid-p01-20261125-unlock-postgres-state}

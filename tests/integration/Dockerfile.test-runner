@@ -1,0 +1,7 @@
+FROM node:22-alpine
+
+RUN apk add --no-cache postgresql-client
+WORKDIR /app
+COPY run_homologation.mjs .
+COPY test_p01_postgres.mjs .
+CMD ["node", "/app/run_homologation.mjs"]

@@ -1,0 +1,6 @@
+services:
+  test-runner:
+    environment:
+      P01_POST_MIGRATION: /app/migration-p02.sql
+    volumes:
+      - ../../workflows/n8n/sql/007-processor-error-observability.sql:/app/migration-p02.sql:ro
