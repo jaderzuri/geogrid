@@ -9,8 +9,8 @@ class BrandingConfig(NamedTuple):
     """Configuração de identidade visual da ZURI."""
 
     # Informações institucionais
-    company_name: str = "ZURI Smart Tech"
-    tagline: str = "Aumentar Visibilidade. Fortalecer Credibilidade. Viabilizar Rentabilidade."
+    company_name: str = "ZURI Smartech"
+    tagline: str = "Aumentar Visibilidade, Fortalecer Credibilidade e Viabilizar Rentabilidade"
     
     # Contato
     whatsapp: str = "+55 (11) 99691-9411"
@@ -22,8 +22,8 @@ class BrandingConfig(NamedTuple):
     phone_icon: str = "☏"  # U+260F
     
     # Web
-    website: str = "www.zurismartec.com.br"
-    website_url: str = "https://www.zurismartec.com.br"
+    website: str = "zurismartech.com.br"
+    website_url: str = "https://zurismartech.com.br"
     
     instagram_handle: str = "@zurismartech"
     instagram_url: str = "https://www.instagram.com/zurismartech/"

@@ -245,7 +245,7 @@ cat ETAPA-2-PLANEJAMENTO.md
 
 - **GitHub**: https://github.com/jaderzuri/geogrid
 - **WhatsApp**: +55 (11) 99691-9411
-- **Website**: www.zurismartec.com.br
+- **Website**: zurismartech.com.br
 
 ---
 

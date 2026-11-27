@@ -366,7 +366,7 @@ $ python3 app/utils/historical_enrichment.py --mode dry-run --limit 100
 **Para dúvidas sobre ETAPA 2:**
 - WhatsApp: +55 (11) 99691-9411
 - Telefone: +55 (11) 4210-3311
-- Email: contato@zurismartec.com.br
+- Email: contato@zurismartech.com.br
 
 ---
 

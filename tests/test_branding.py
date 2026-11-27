@@ -10,8 +10,8 @@ class TestBrandingConfig:
 
     def test_branding_config_has_required_fields(self):
         """BRANDING should have all required institutional data."""
-        assert BRANDING.company_name == "ZURI Smart Tech"
-        assert BRANDING.website == "www.zurismartec.com.br"
+        assert BRANDING.company_name == "ZURI Smartech"
+        assert BRANDING.website == "zurismartech.com.br"
         assert "11" in BRANDING.whatsapp  # Area code
         assert "9969" in BRANDING.whatsapp  # Number prefix
         assert BRANDING.phone == "+55 (11) 4210-3311"
@@ -154,7 +154,7 @@ class TestQrCodeGeneration:
 
     def test_qrcode_with_long_url(self):
         """QR code should handle longer URLs."""
-        long_url = "https://www.zurismartec.com.br/diagnostico/posicionamento?empresa=teste&regiao=sao-paulo"
+        long_url = "https://zurismartech.com.br/diagnostico/posicionamento?empresa=teste&regiao=sao-paulo"
         result = generate_qrcode_base64(long_url)
         # Should succeed or gracefully return None
         assert result is None or isinstance(result, str)

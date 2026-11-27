@@ -38,9 +38,9 @@
 ## Branding Features Implemented
 
 ### ✅ Institutional Branding
-- Company: **ZURI Smart Tech**
+- Company: **ZURI Smartech**
 - Tagline: *"Aumentar Visibilidade. Fortalecer Credibilidade. Viabilizar Rentabilidade."*
-- Website: [www.zurismartec.com.br](https://www.zurismartec.com.br)
+- Website: [zurismartech.com.br](https://zurismartech.com.br)
 - Instagram: [@zurismartech](https://www.instagram.com/zurismartech/)
 
 ### ✅ Contact Information
@@ -162,9 +162,9 @@ generate_sample_html(grid_size, include_branding=True)
 All branding data centralized in `BrandingConfig`:
 ```python
 BRANDING = BrandingConfig(
-    company_name="ZURI Smart Tech",
+    company_name="ZURI Smartech",
     whatsapp="+55 (11) 99691-9411",
-    website="www.zurismartec.com.br",
+    website="zurismartech.com.br",
     # ...
 )
 ```

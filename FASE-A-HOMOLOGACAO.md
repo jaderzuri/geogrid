@@ -105,7 +105,7 @@ Saída:
 - ✅ Restauração do mapa interativo
 
 ### Branding Integrado
-- ✅ Marca ZURI Smart Tech
+- ✅ Marca ZURI Smartech
 - ✅ Rodapé com contatos clicáveis
 - ✅ QR Code para WhatsApp (última página)
 - ✅ CTA comercial com missão institucional
@@ -373,7 +373,7 @@ Antes de fazer deploy para produção:
 **Para dúvidas sobre homologação:**
 - WhatsApp: +55 (11) 99691-9411
 - Telefone: +55 (11) 4210-3311
-- Website: www.zurismartec.com.br
+- Website: zurismartech.com.br
 
 **Próximo passo:** Autorização para publicação da FASE A.
 

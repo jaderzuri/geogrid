@@ -299,10 +299,10 @@ Ao concluir ETAPA 2, verificar:
 
 ## 📞 Contactos e Recursos
 
-**ZURI Smart Tech:**
+**ZURI Smartech:**
 - WhatsApp: +55 (11) 99691-9411
 - Telefone: +55 (11) 4210-3311
-- Website: www.zurismartec.com.br
+- Website: zurismartech.com.br
 - Instagram: @zurismartech
 
 **Repositório:**
