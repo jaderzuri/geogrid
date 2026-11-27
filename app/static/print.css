@@ -1,0 +1,468 @@
+/**
+ * Smart Grid by ZURI - Print/PDF Stylesheet
+ * 
+ * This stylesheet ensures optimal layout when printing or saving as PDF.
+ * It handles:
+ * - A4 Landscape orientation
+ * - Proper margins and spacing
+ * - Centered maps with auto-zoom to fit all points
+ * - Paginated competitor tables
+ * - Full visibility of all elements (no cutoffs)
+ * - Portuguese text localization
+ * - Proper color preservation
+ */
+
+@media print {
+  /* ========================================== */
+  /* Page Setup */
+  /* ========================================== */
+
+  @page {
+    size: A4 landscape;
+    margin: 15mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+
+  body {
+    display: block;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    line-height: 1.4;
+    font-size: 11pt;
+  }
+
+  /* ========================================== */
+  /* Hide Interactive Elements */
+  /* ========================================== */
+
+  #side,
+  .topbar,
+  header,
+  footer,
+  nav,
+  .actions,
+  #printBtn,
+  #deleteBtn,
+  #refreshBtn,
+  .toggle,
+  .card button,
+  button,
+  input[type="button"],
+  input[type="submit"],
+  .secondary-button,
+  .submit-button,
+  #refresh-status,
+  #print-report {
+    display: none !important;
+  }
+
+  /* ========================================== */
+  /* Main Layout for Print */
+  /* ========================================== */
+
+  main {
+    position: static !important;
+    display: flex;
+    flex-direction: column;
+    gap: 20pt;
+    page-break-inside: avoid;
+  }
+
+  #map {
+    position: relative !important;
+    width: 100%;
+    height: 300pt;
+    border: 1px solid #ccc;
+    page-break-inside: avoid;
+  }
+
+  .card {
+    position: static !important;
+    width: 100% !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 12pt 14pt;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    page-break-inside: avoid;
+  }
+
+  #scanCard {
+    display: block;
+  }
+
+  #compCard {
+    display: block;
+    max-height: none !important;
+  }
+
+  #compBody {
+    margin: 6pt 0 !important;
+    overflow-y: visible !important;
+  }
+
+  /* ========================================== */
+  /* Card Header and Title */
+  /* ========================================== */
+
+  .card-head {
+    display: block;
+    margin-bottom: 10pt;
+  }
+
+  .card .title {
+    font-weight: 700;
+    font-size: 14pt;
+    margin-bottom: 8pt;
+  }
+
+  /* ========================================== */
+  /* Metrics Grid */
+  /* ========================================== */
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8pt;
+    margin: 10pt 0 8pt;
+    page-break-inside: avoid;
+  }
+
+  .metric {
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 7pt 9pt;
+  }
+
+  .metric .v {
+    font-size: 18pt;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+
+  .metric .l {
+    font-size: 10pt;
+    color: #666;
+    display: block;
+    margin-top: 2pt;
+  }
+
+  .metric .d {
+    font-size: 10pt;
+    font-weight: 600;
+    display: block;
+    margin-top: 2pt;
+  }
+
+  .d.up { color: #16a34a; }
+  .d.down { color: #dc2626; }
+
+  /* ========================================== */
+  /* Progress and Coverage Info */
+  /* ========================================== */
+
+  .progress {
+    position: relative;
+    height: 16pt;
+    background: #f0f0f0;
+    border-radius: 99px;
+    overflow: hidden;
+    margin: 8pt 0;
+    page-break-inside: avoid;
+  }
+
+  .progress div {
+    height: 100%;
+    background: #2563eb;
+  }
+
+  .progress span {
+    position: absolute;
+    inset: 0;
+    text-align: center;
+    font-size: 10pt;
+    line-height: 16pt;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .coverage-info {
+    margin: 8pt 0;
+    padding: 7pt 9pt;
+    border-radius: 6px;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Tables */
+  /* ========================================== */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+
+  thead {
+    page-break-after: avoid;
+  }
+
+  th {
+    position: static;
+    text-align: left;
+    font-weight: 700;
+    color: #333;
+    padding: 6pt 8pt;
+    border-bottom: 2px solid #333;
+    background: #f9f9f9;
+  }
+
+  td {
+    padding: 6pt 8pt;
+    border-bottom: 1px solid #ddd;
+    font-variant-numeric: tabular-nums;
+  }
+
+  td:nth-child(2) {
+    max-width: 180pt;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    page-break-inside: avoid;
+  }
+
+  tbody tr.me td {
+    font-weight: 700;
+    background: #fff9e6;
+  }
+
+  /* ========================================== */
+  /* Legend */
+  /* ========================================== */
+
+  .legend {
+    position: static !important;
+    display: flex;
+    gap: 12pt;
+    font-size: 11pt;
+    padding: 10pt 0;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+    border-top: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5pt;
+  }
+
+  .sw {
+    width: 12pt;
+    height: 12pt;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .sw.r1 { background: #16a34a; }
+  .sw.r2 { background: #eab308; }
+  .sw.r3 { background: #f97316; }
+  .sw.r4 { background: #dc2626; }
+  .sw.rx { background: #9ca3af; }
+  .sw.no-results { background: #d1d5db; }
+  .sw.pending { background: #3b82f6; }
+
+  /* ========================================== */
+  /* Diagnostic Report Styling */
+  /* ========================================== */
+
+  .report-card {
+    display: block;
+    page-break-inside: avoid;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8pt;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+
+  .metric-card {
+    padding: 8pt;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .metric-card span {
+    color: #666;
+    font-size: 10pt;
+  }
+
+  .metric-card strong {
+    font-size: 14pt;
+    color: #333;
+  }
+
+  .report-summary {
+    color: #666;
+    font-size: 10pt;
+    line-height: 1.6;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Print-Specific Typography */
+  /* ========================================== */
+
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    margin-top: 10pt;
+    margin-bottom: 8pt;
+  }
+
+  h1 {
+    font-size: 18pt;
+    font-weight: 700;
+  }
+
+  h2 {
+    font-size: 14pt;
+    font-weight: 700;
+  }
+
+  h3 {
+    font-size: 12pt;
+    font-weight: 700;
+  }
+
+  h4 {
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 6pt 0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Links and Colors */
+  /* ========================================== */
+
+  a {
+    color: #0066cc;
+    text-decoration: underline;
+  }
+
+  /* Preserve color printing */
+  color-scheme: print;
+
+  /* ========================================== */
+  /* Utility Classes */
+  /* ========================================== */
+
+  .hidden {
+    display: none !important;
+  }
+
+  .muted {
+    color: #666;
+  }
+
+  .small {
+    font-size: 9pt;
+  }
+
+  .err {
+    color: #dc2626;
+  }
+
+  .ok {
+    color: #16a34a;
+  }
+
+  /* ========================================== */
+  /* Pagination Break Points */
+  /* ========================================== */
+
+  .card {
+    page-break-inside: avoid;
+  }
+
+  table {
+    page-break-inside: avoid;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Attribution and Footer */
+  /* ========================================== */
+
+  .leaflet-attribution {
+    display: block !important;
+    font-size: 8pt;
+    color: #666;
+    margin-top: 4pt;
+  }
+
+  /* Ensure map attribution is visible */
+  .leaflet-control-attribution {
+    display: block !important;
+  }
+}
+
+/* ========================================== */
+/* Screen-Only Styles - Ensure Print Styles Apply Over These */
+/* ========================================== */
+
+@media screen {
+  /* Print-only content is hidden on screen by default */
+  .print-only {
+    display: none;
+  }
+}
+
+/* ========================================== */
+/* Safari-specific Print Adjustments */
+/* ========================================== */
+
+@supports (-webkit-print-color-adjust: exact) {
+  @media print {
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+}

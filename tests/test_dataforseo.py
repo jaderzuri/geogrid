@@ -185,3 +185,60 @@ def test_empty_organic_results_are_not_reported_as_rank_20_plus(monkeypatch):
     assert caught.value.outcome == "no_results"
     assert caught.value.api_status_code == 20000
     assert caught.value.api_status_message == "Ok."
+
+
+def test_additional_contact_fields_are_captured_when_available(monkeypatch):
+    install_transport(
+        monkeypatch,
+        lambda request: httpx.Response(200, json=response_for(items=[
+            {
+                "type": "maps_search",
+                "title": "Restaurante Example",
+                "cid": "123456789",
+                "place_id": "ChIJN1blonMsZAgR...",
+                "latitude": -23.5505,
+                "longitude": -46.6333,
+                "address": "São Paulo, SP",
+                "category": "Restaurante",
+                "rating": {"value": 4.5, "votes_count": 150},
+                "phone": "+5511999999999",
+                "url": "https://example.com.br",
+                "position": 1,
+            },
+            {
+                "type": "maps_search",
+                "title": "Restaurante Sem Contato",
+                "cid": "987654321",
+                "latitude": -23.5500,
+                "longitude": -46.6330,
+                "address": "São Paulo, SP",
+                "category": "Restaurante",
+                "rating": {"value": 3.8, "votes_count": 42},
+            },
+        ])),
+    )
+
+    async def run():
+        fetcher = DataForSEOFetcher(Resolver(), login="test-login", password="test-password")
+        try:
+            results = await fetcher.fetch("restaurante", -23.5, -46.6)
+            return results
+        finally:
+            await fetcher.close()
+
+    results = asyncio.run(run())
+
+    assert len(results) == 2
+    
+    first = results[0]
+    assert first["name"] == "Restaurante Example"
+    assert first["phone"] == "+5511999999999"
+    assert first["url"] == "https://example.com.br"
+    assert first["position"] == 1
+    
+    second = results[1]
+    assert second["name"] == "Restaurante Sem Contato"
+    assert second["phone"] is None
+    assert second["url"] is None
+    assert second["position"] is None
+

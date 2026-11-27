@@ -28,6 +28,7 @@ from .competitive_metrics import (
     position_opportunity,
     target_brand_confidence,
 )
+from .interpretation import generate_full_interpretation
 from .fetchers.base import FetchError
 from .business_finder import router as business_finder_router
 from .commercial_api import router as commercial_router
@@ -607,10 +608,10 @@ def scan_analysis(
     iop = position_opportunity(scan_points, icpb_v2)
 
     # ----------------------------------------------
-    # 9. Return complete analysis
+    # 9. Generate interpretations
     # ----------------------------------------------
 
-    return {
+    analysis_result = {
         "scan_id": scan_id,
         "keyword": scan.get("keyword"),
         "target_category": target_category,
@@ -624,3 +625,12 @@ def scan_analysis(
         "ida_coverage_pct": ida_coverage_pct,
         "points": points,
     }
+
+    interpretation = generate_full_interpretation(analysis_result, scan.get("keyword", ""))
+    analysis_result["interpretation"] = interpretation
+
+    # ----------------------------------------------
+    # 10. Return complete analysis
+    # ----------------------------------------------
+
+    return analysis_result

@@ -136,6 +136,9 @@ class DataForSEOFetcher:
                 "reviews": rating.get("votes_count"),
                 "category": item.get("category"),
                 "address": item.get("address"),
+                "phone": item.get("phone"),
+                "url": item.get("url"),
+                "position": item.get("position"),
             })
         return out[:MAX_RESULTS]
 
