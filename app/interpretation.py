@@ -153,8 +153,13 @@ def generate_competition_interpretation(ice: dict, keyword: str) -> str:
     result = f"Competição em '{keyword}': Nível {level_text}."
     
     if top_competitors and len(top_competitors) > 0:
-        top_names = ", ".join([c.get("name", "Empresa") for c in top_competitors[:3]])
-        result += f" Principais concorrentes: {top_names}."
+        top_names = []
+        for c in top_competitors[:3]:
+            if isinstance(c, dict):
+                top_names.append(c.get("name", "Empresa"))
+            else:
+                top_names.append(str(c))
+        result += f" Principais concorrentes: {', '.join(top_names)}."
     
     return result
 
