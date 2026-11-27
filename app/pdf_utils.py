@@ -18,6 +18,9 @@ except ImportError:
     Browser = None
     Page = None
 
+from app.config.branding import get_footer_html, get_cta_section_html, BRANDING
+from app.utils.qrcode import generate_qrcode_base64
+
 
 async def generate_pdf(
     html_content: str,
@@ -112,12 +115,13 @@ async def generate_test_pdfs(
     return results
 
 
-def generate_sample_html(grid_size: int = 3) -> str:
+def generate_sample_html(grid_size: int = 3, include_branding: bool = True) -> str:
     """
     Generate sample HTML document for testing PDF layout.
 
     Args:
         grid_size: Grid dimension (e.g., 3 for 3x3)
+        include_branding: Include ZURI branding, CTA, and QR Code
 
     Returns:
         Complete HTML document as string
@@ -148,7 +152,7 @@ def generate_sample_html(grid_size: int = 3) -> str:
         for i in range(min(10, total_points))
     )
 
-    return f"""<!DOCTYPE html>
+    base_html = f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -159,6 +163,10 @@ def generate_sample_html(grid_size: int = 3) -> str:
     <style>
         body {{ margin: 0; padding: 20px; background: white; }}
         .report {{ max-width: 1000px; margin: 0 auto; }}
+        @media print {{
+            body {{ padding: 0; }}
+            .page-break-before {{ page-break-before: always; }}
+        }}
     </style>
 </head>
 <body>
@@ -219,6 +227,65 @@ def generate_sample_html(grid_size: int = 3) -> str:
     </div>
 </body>
 </html>"""
+
+    if include_branding:
+        return add_branding_to_html(base_html, include_cta=True, include_qrcode=True)
+    return base_html
+
+
+def add_branding_to_html(html_content: str, include_cta: bool = True, include_qrcode: bool = True) -> str:
+    """
+    Adiciona branding institucional e CTA comercial ao HTML antes de gerar PDF.
+    
+    Args:
+        html_content: HTML original
+        include_cta: Incluir seção de CTA comercial
+        include_qrcode: Incluir QR Code na última página
+        
+    Returns:
+        HTML modificado com branding
+    """
+    footer = get_footer_html()
+    
+    # Adicionar footer antes de </body>
+    html_with_footer = html_content.replace("</body>", f"{footer}\n</body>")
+    
+    # Adicionar CTA se solicitado
+    if include_cta:
+        cta = get_cta_section_html()
+        # Inserir CTA antes do footer
+        html_with_footer = html_with_footer.replace(
+            "</body>",
+            f"{cta}\n</body>"
+        )
+    
+    # Adicionar QR Code na última página se solicitado
+    if include_qrcode:
+        qrcode_base64 = generate_qrcode_base64(BRANDING.whatsapp_link)
+        if qrcode_base64:
+            qrcode_html = f"""
+            <div style="
+                page-break-before: always;
+                text-align: center;
+                padding: 40px 20px;
+                font-family: Arial, sans-serif;
+            ">
+                <h2 style="margin-bottom: 20px; color: #0066cc;">Entre em contato</h2>
+                <p style="font-size: 12px; color: #666; margin-bottom: 20px;">
+                    Escaneie o QR Code para conversar com a ZURI no WhatsApp
+                </p>
+                <img src="{qrcode_base64}" alt="WhatsApp QR Code" style="width: 200px; height: 200px; margin: 20px auto;" />
+                <p style="font-size: 11px; color: #333; margin-top: 20px;">
+                    <strong>{BRANDING.whatsapp}</strong>
+                </p>
+                <p style="font-size: 10px; color: #666;">
+                    {BRANDING.whatsapp_link}
+                </p>
+            </div>
+            """
+            html_with_footer = html_with_footer.replace("</body>", f"{qrcode_html}\n</body>")
+    
+    return html_with_footer
 
 
 if __name__ == "__main__":
