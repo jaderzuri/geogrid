@@ -7,6 +7,98 @@ geográfica, preservando a interface Smart Grid Live e oferecendo uma fila
 assíncrona para solicitações externas. A arquitetura separa as pesquisas Live
 da interface dos diagnósticos Standard Normal iniciados pela Landing Page.
 
+## Status FASE A — Concluída ✅
+
+**Data de Conclusão**: 2025-01-16
+
+### Implementações:
+1. **P0.1 — Captura de Dados de Contato** ✅
+   - Captura: `phone`, `url`, `position` quando disponíveis
+   - Sem invenção de dados; campos opcionais com valores None
+   - Persistência automática em `points.results` (JSON flexível)
+   - Compatibilidade retroativa 100%
+   - Testes: 254 passando
+
+2. **P0.2 — Interpretação de Resultados** ✅
+   - Módulo `app/interpretation.py` implementado
+   - Três geradores: coverage, positioning, competition
+   - Integrado a `/api/scans/{scan_id}/analysis`
+   - Testes: 268 passando (+ 15 novos)
+
+3. **P0.3 — Correção de PDF** ✅
+   - Folha de estilos `print.css` para A4 paisagem
+   - Integrado a `index.html` e `diagnostic.html`
+   - Utilitário `app/pdf_utils.py` com Playwright
+   - PDFs validados: 3×3, 7×7, 13×13
+   - Testes: 280 passando (+ 12 novos)
+
+**Resultado**: 280 testes passando. Sem chamadas pagas. Compatibilidade preservada.
+
+## Próximas Fases (Futuro)
+
+### FASE B — MVP Comercial (Prioridade P1)
+
+1. **Investigação de Recuperação Histórica**
+   - Verificar se respostas originais estão preservadas
+   - Analisar possibilidade de enriquecimento sem nova cobrança
+   - Estimar custos de recuperação por CID/Place ID
+
+2. **Utilitário de Recuperação de Contatos**
+   - Modo dry-run por padrão
+   - Deduplicação por identidade empresarial
+   - Controle de origem e elegibilidade
+   - Estimativa de custos antes da execução
+   - Checkpoint e retomada após interrupções
+   - Relatório de resultados
+
+3. **Interface de Oportunidades Comerciais**
+   - Visualizar empresas identificadas
+   - Filtros: categoria, palavra-chave, região, posicionamento, telefone
+   - Visualizar origem e data das informações
+   - Selecionar e exportar em CSV
+   - Identificar empresas que precisam enriquecimento
+
+4. **Classificação de Telefones**
+   - Normalização E.164 brasileiro
+   - Classificação: celular, fixo, inválido, internacional, indeterminado
+   - Testes para DDD, duplicados, formatos inválidos
+
+### FASE C — Integrações (Prioridade P1)
+
+1. **Integração CRM T2S**
+   - Adaptador com cadastro idempotente
+   - Origem SMART-GRID-ZURI
+   - Controle de duplicidade e reprocessamento seguro
+   - Validação com contrato oficial antes de ativar
+
+2. **Fila Comercial SMS/RCS**
+   - PostgreSQL com limite 200 mensagens/dia
+   - Controle de duplicidade e descadastramento
+   - Evidência de elegibilidade para contato
+   - Disparos desabilitados por padrão
+
+3. **Workflows n8n**
+   - Workflows válidos e inicialmente inativos
+   - Testes com mocks
+   - Integração segura com endpoints
+
+### FASE D — Futuro (Prioridade P2+)
+
+1. **ZURI Smart Report**
+   - Interface de personalização de relatórios
+   - Capa personalizada e logo do cliente
+   - Resumo executivo automatizado
+   - Interpretação estratégica por IA
+   - QR Code e CTA WhatsApp
+   - Entrega por e-mail ou WhatsApp
+
+2. **ZURI Keyword Intelligence**
+   - Volume mensal de buscas no Google
+   - Histórico de 12 meses e sazonalidade
+   - CPC médio e concorrência publicitária
+   - Palavras-chave relacionadas e alternativas
+   - Distinção: Google Search vs Google Maps
+
 ## Sprint de lançamento comercial — candidata local
 
 - Implementados registros diretos de leads e captura de concorrentes a partir
