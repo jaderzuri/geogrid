@@ -1,0 +1,617 @@
+/**
+ * Smart Grid by ZURI - Print/PDF Stylesheet
+ * 
+ * This stylesheet ensures optimal layout when printing or saving as PDF.
+ * It handles:
+ * - A4 Landscape orientation
+ * - Proper margins and spacing
+ * - Centered maps with auto-zoom to fit all points
+ * - Paginated competitor tables
+ * - Full visibility of all elements (no cutoffs)
+ * - Portuguese text localization
+ * - Proper color preservation
+ */
+
+@media print {
+  /* ========================================== */
+  /* Page Setup */
+  /* ========================================== */
+
+  @page {
+    size: A4 landscape;
+    margin: 15mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: white;
+    color: black;
+  }
+
+  body {
+    display: block;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    line-height: 1.4;
+    font-size: 11pt;
+  }
+
+  /* ========================================== */
+  /* Hide Interactive Elements */
+  /* ========================================== */
+
+  #side,
+  .topbar,
+  header,
+  footer,
+  nav,
+  .actions,
+  #printBtn,
+  #deleteBtn,
+  #refreshBtn,
+  .toggle,
+  .card button,
+  button,
+  input[type="button"],
+  input[type="submit"],
+  .secondary-button,
+  .submit-button,
+  #refresh-status,
+  #print-report {
+    display: none !important;
+  }
+
+  /* ========================================== */
+  /* Main Layout for Print */
+  /* ========================================== */
+
+  main {
+    position: static !important;
+    display: block;
+    width: 267mm !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  #map {
+    position: relative !important;
+    inset: auto !important;
+    width: 100%;
+    height: 420pt;
+    min-height: 420pt;
+    border: 1px solid #ccc;
+    page-break-inside: avoid;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-intro {
+    margin: 0 0 5pt;
+    padding: 0;
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+
+  .print-brand {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 2px solid #1d4ed8;
+    padding-bottom: 4pt;
+    font-size: 15pt;
+    font-weight: 700;
+  }
+
+  .print-brand span {
+    color: #555;
+    font-size: 10pt;
+    font-weight: 600;
+  }
+
+  .print-intro p {
+    margin: 4pt 0;
+    font-size: 8.5pt;
+    line-height: 1.3;
+  }
+
+  #mapTileStatus {
+    position: static !important;
+    width: fit-content;
+    max-width: 100%;
+    margin: 6pt auto 0;
+    transform: none !important;
+    box-shadow: none;
+  }
+
+  .card {
+    position: static !important;
+    width: 100% !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 12pt 14pt;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    page-break-inside: avoid;
+  }
+
+  #scanCard {
+    display: block;
+    page-break-before: always;
+  }
+
+  #compCard {
+    display: block;
+    max-height: none !important;
+    page-break-before: always;
+    page-break-inside: auto;
+  }
+
+  #compBody {
+    margin: 6pt 0 !important;
+    overflow: visible !important;
+  }
+
+  #compTable {
+    min-width: 0 !important;
+    table-layout: fixed;
+    font-size: 7.5pt;
+  }
+
+  #compTable th,
+  #compTable td {
+    padding: 4pt 5pt;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  #compTable th:nth-child(1) { width: 3%; }
+  #compTable th:nth-child(2) { width: 25%; }
+  #compTable th:nth-child(3) { width: 22%; }
+  #compTable th:nth-child(4) { width: 20%; }
+  #compTable th:nth-child(5) { width: 7%; }
+  #compTable th:nth-child(6) { width: 9%; }
+  #compTable th:nth-child(7) { width: 9%; }
+  #compTable th:nth-child(8) { width: 5%; }
+
+  #compTable td.competitor-name {
+    max-width: none;
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .competitor-contact,
+  .competitor-identifiers {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .position-summary,
+  .contact-type,
+  .point-positions {
+    font-size: 7pt;
+  }
+
+  .point-positions > ul {
+    display: none !important;
+  }
+
+  .print-closing {
+    margin-top: 12pt;
+    page-break-inside: avoid;
+  }
+
+  .print-cta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18pt;
+    padding: 10pt 12pt;
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #1d4ed8;
+    background: #f8fafc;
+    page-break-inside: avoid;
+  }
+
+  .print-cta h2 {
+    margin: 0 0 5pt;
+    color: #1d4ed8;
+  }
+
+  .print-cta p {
+    margin: 3pt 0;
+    font-size: 8.5pt;
+  }
+
+  .print-tagline {
+    color: #555;
+    font-style: italic;
+  }
+
+  .print-qr-link {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    width: 110pt;
+    color: #111;
+    font-size: 7pt;
+    text-align: center;
+    text-decoration: none;
+  }
+
+  .print-qr-link img {
+    width: 78pt;
+    height: 78pt;
+  }
+
+  .print-qr-link span {
+    margin-top: 3pt;
+  }
+  }
+
+  /* ========================================== */
+  /* Card Header and Title */
+  /* ========================================== */
+
+  .card-head {
+    display: block;
+    margin-bottom: 10pt;
+  }
+
+  .card .title {
+    font-weight: 700;
+    font-size: 14pt;
+    margin-bottom: 8pt;
+  }
+
+  /* ========================================== */
+  /* Metrics Grid */
+  /* ========================================== */
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8pt;
+    margin: 10pt 0 8pt;
+    page-break-inside: avoid;
+  }
+
+  .metric {
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 7pt 9pt;
+  }
+
+  .metric .v {
+    font-size: 18pt;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+
+  .metric .l {
+    font-size: 10pt;
+    color: #666;
+    display: block;
+    margin-top: 2pt;
+  }
+
+  .metric .d {
+    font-size: 10pt;
+    font-weight: 600;
+    display: block;
+    margin-top: 2pt;
+  }
+
+  .d.up { color: #16a34a; }
+  .d.down { color: #dc2626; }
+
+  /* ========================================== */
+  /* Progress and Coverage Info */
+  /* ========================================== */
+
+  .progress {
+    position: relative;
+    height: 16pt;
+    background: #f0f0f0;
+    border-radius: 99px;
+    overflow: hidden;
+    margin: 8pt 0;
+    page-break-inside: avoid;
+  }
+
+  .progress div {
+    height: 100%;
+    background: #2563eb;
+  }
+
+  .progress span {
+    position: absolute;
+    inset: 0;
+    text-align: center;
+    font-size: 10pt;
+    line-height: 16pt;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .coverage-info {
+    margin: 8pt 0;
+    padding: 7pt 9pt;
+    border-radius: 6px;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Tables */
+  /* ========================================== */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10pt;
+    margin: 10pt 0;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+    page-break-after: avoid;
+  }
+
+  th {
+    position: static;
+    text-align: left;
+    font-weight: 700;
+    color: #333;
+    padding: 6pt 8pt;
+    border-bottom: 2px solid #333;
+    background: #f9f9f9;
+  }
+
+  td {
+    padding: 6pt 8pt;
+    border-bottom: 1px solid #ddd;
+    font-variant-numeric: tabular-nums;
+  }
+
+  td:nth-child(2) {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  tbody tr {
+    page-break-inside: avoid;
+  }
+
+  tbody tr.me td {
+    font-weight: 700;
+    background: #fff9e6;
+  }
+
+  /* ========================================== */
+  /* Legend */
+  /* ========================================== */
+
+  .legend {
+    position: static !important;
+    display: flex;
+    gap: 12pt;
+    font-size: 11pt;
+    padding: 10pt 0;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+    border-top: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5pt;
+  }
+
+  .sw {
+    width: 12pt;
+    height: 12pt;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .sw.r1 { background: #16a34a; }
+  .sw.r2 { background: #eab308; }
+  .sw.r3 { background: #f97316; }
+  .sw.r4 { background: #dc2626; }
+  .sw.rx { background: #9ca3af; }
+  .sw.no-results { background: #d1d5db; }
+  .sw.pending { background: #3b82f6; }
+
+  /* ========================================== */
+  /* Diagnostic Report Styling */
+  /* ========================================== */
+
+  .report-card {
+    display: block;
+    page-break-inside: avoid;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8pt;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+
+  .metric-card {
+    padding: 8pt;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .metric-card span {
+    color: #666;
+    font-size: 10pt;
+  }
+
+  .metric-card strong {
+    font-size: 14pt;
+    color: #333;
+  }
+
+  .report-summary {
+    color: #666;
+    font-size: 10pt;
+    line-height: 1.6;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Print-Specific Typography */
+  /* ========================================== */
+
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    margin-top: 10pt;
+    margin-bottom: 8pt;
+  }
+
+  h1 {
+    font-size: 18pt;
+    font-weight: 700;
+  }
+
+  h2 {
+    font-size: 14pt;
+    font-weight: 700;
+  }
+
+  h3 {
+    font-size: 12pt;
+    font-weight: 700;
+  }
+
+  h4 {
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 6pt 0;
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Links and Colors */
+  /* ========================================== */
+
+  a {
+    color: #0066cc;
+    text-decoration: underline;
+  }
+
+  /* Preserve color printing */
+  color-scheme: print;
+
+  /* ========================================== */
+  /* Utility Classes */
+  /* ========================================== */
+
+  .hidden {
+    display: none !important;
+  }
+
+  .muted {
+    color: #666;
+  }
+
+  .small {
+    font-size: 9pt;
+  }
+
+  .err {
+    color: #dc2626;
+  }
+
+  .ok {
+    color: #16a34a;
+  }
+
+  /* ========================================== */
+  /* Pagination Break Points */
+  /* ========================================== */
+
+  .card {
+    page-break-inside: avoid;
+  }
+
+  table {
+    page-break-inside: avoid;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* ========================================== */
+  /* Attribution and Footer */
+  /* ========================================== */
+
+  .leaflet-attribution {
+    display: block !important;
+    font-size: 8pt;
+    color: #666;
+    margin-top: 4pt;
+  }
+
+  /* Ensure map attribution is visible */
+  .leaflet-control-attribution {
+    display: block !important;
+  }
+}
+
+/* ========================================== */
+/* Screen-Only Styles - Ensure Print Styles Apply Over These */
+/* ========================================== */
+
+@media screen {
+  /* Print-only content is hidden on screen by default */
+  .print-only {
+    display: none;
+  }
+}
+
+/* ========================================== */
+/* Safari-specific Print Adjustments */
+/* ========================================== */
+
+@supports (-webkit-print-color-adjust: exact) {
+  @media print {
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+}

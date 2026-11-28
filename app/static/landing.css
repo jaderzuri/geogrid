@@ -65,6 +65,7 @@ input::placeholder { color: #78909a; }
 footer { padding: 24px; color: #78909a; text-align: center; font-size: .75rem; border-top: 1px solid rgba(164,181,189,.12); }
 .status-shell { width: min(720px, calc(100% - 36px)); margin: 70px auto; }
 .status-card h1 { font-size: clamp(2rem, 5vw, 3rem); }
+[hidden] { display: none !important; }
 .status-details { display: grid; gap: 12px; margin: 25px 0; }
 .status-details div { display: flex; justify-content: space-between; gap: 20px; padding: 14px; border-radius: 10px; background: var(--panel-soft); }
 .status-details span { color: var(--muted); }

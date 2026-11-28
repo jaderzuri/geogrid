@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -13,12 +14,28 @@ STATIC = ROOT / "app" / "static"
 def _page_content() -> str:
     html = index().body.decode("utf-8")
     css = (STATIC / "style.css").read_text(encoding="utf-8")
+    print_css = (STATIC / "print.css").read_text(encoding="utf-8")
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
     leaflet_stub = """
       <script>
         window.testMarkers = [];
+        window.testMapCalls = [];
         window.L = {
-          map: () => ({setView() { return this; }}),
+          map: () => {
+            window.testMap = {
+              setView() { return this; },
+              fitBounds() { return this; },
+              invalidateSize(options) {
+                window.testMapCalls.push(["invalidateSize", options]);
+                return this;
+              },
+              panTo(center, options) {
+                window.testMapCalls.push(["panTo", center, options]);
+                return this;
+              },
+            };
+            return window.testMap;
+          },
           control: {zoom: () => ({addTo() {}})},
           tileLayer: (url, options) => {
             window.tileLayerConfig = {url, options};
@@ -47,6 +64,7 @@ def _page_content() -> str:
         .replace('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">', "")
         .replace('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>', leaflet_stub)
         .replace('<link rel="stylesheet" href="/static/style.css">', f"<style>{css}</style>")
+        .replace('<link rel="stylesheet" href="/static/print.css">', f"<style>{print_css}</style>")
         .replace('<script src="/static/app.js"></script>', f"<script>{app_js}</script>")
         .replace("<head>", '<head><base href="http://smart-grid.test/">')
     )
@@ -183,6 +201,126 @@ def test_scan_view_explains_coverage_and_distinguishes_point_outcomes(help_page)
     assert any("Saldo insuficiente" in popup and "40200" in popup for popup in popup_texts)
 
 
+def test_scan_interpretation_is_rendered_for_complete_partial_empty_and_failed_scans(help_page):
+    scenarios = {
+        31: {
+            "status": "done",
+            "states": ["ok"] * 9,
+            "text": "Execução concluída em todos os 9 pontos.",
+        },
+        32: {
+            "status": "partial",
+            "states": ["ok"] * 3 + ["no_results"] * 2 + ["error"] * 4,
+            "text": "Pesquisa concluída com interrupções; leitura limitada aos pontos válidos.",
+        },
+        33: {
+            "status": "done",
+            "states": ["no_results"] * 9,
+            "text": "A ausência de resultados não comprova inexistência de empresas ou de demanda.",
+        },
+        34: {
+            "status": "failed",
+            "states": ["error"] * 9,
+            "text": "Não foi possível avaliar o posicionamento devido a falhas técnicas.",
+        },
+        35: {
+            "status": "done",
+            "states": ["ok"] * 3 + ["no_results"] * 6,
+            "text": (
+                "A execução foi concluída em todos os 9 pontos; 3/9 pontos válidos. "
+                "A ausência de resultados não comprova inexistência de empresas ou de demanda."
+            ),
+        },
+    }
+
+    def fulfill_scan(route):
+        scan_id = int(route.request.url.rsplit("/", 1)[-1])
+        scenario = scenarios[scan_id]
+        points = [
+            {
+                "row": index // 3,
+                "col": index % 3,
+                "lat": -23.5 + (index // 3) * 0.01,
+                "lng": -46.6 + (index % 3) * 0.01,
+                "rank": 1 if state == "ok" else None,
+                "status": state,
+                "results": [{"name": "Empresa", "cid": "target"}] if state == "ok" else [],
+            }
+            for index, state in enumerate(scenario["states"])
+        ]
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({
+                "id": scan_id,
+                "status": scenario["status"],
+                "finished": "2026-11-27T00:00:00Z",
+                "keyword": "serviço local",
+                "business_name": "Empresa",
+                "business_cid": "target",
+                "business_place_id": None,
+                "created": "2026-11-27T00:00:00Z",
+                "grid_size": 3,
+                "spacing_km": 1,
+                "center_lat": -23.5,
+                "center_lng": -46.6,
+                "progress": 9,
+                "total": 9,
+                "metrics": {},
+                "comparison": None,
+                "competitors": [],
+                "points": points,
+            }),
+        )
+
+    def fulfill_analysis(route):
+        scan_id = int(route.request.url.split("/api/scans/")[1].split("/")[0])
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({
+                "metrics": {},
+                "ida_evaluated_points": 3,
+                "ida_coverage_pct": 100,
+                "ice": {
+                    "valid_points": 3,
+                    "total_points": 9,
+                    "counts": {"direct": 1, "indirect": 0, "keyword_only": 0, "indeterminate": 0},
+                },
+                "icm": {"observed_occurrences": 1},
+                "icpb_v2": {"valid_points": 3, "total_points": 9},
+                "iop": {},
+                "points": [],
+                "interpretation": {
+                    "coverage": "Execução: " + scenarios[scan_id]["text"],
+                    "positioning": "Posicionamento contextualizado para os dados disponíveis.",
+                    "competition": "Concorrência observada conforme as respostas recebidas.",
+                },
+            }),
+        )
+
+    help_page.route("http://smart-grid.test/api/scans/*/analysis*", fulfill_analysis)
+    help_page.route("http://smart-grid.test/api/scans/*", fulfill_scan)
+
+    for scan_id, scenario in scenarios.items():
+        help_page.evaluate(f"openScan({scan_id})")
+        expect(help_page.locator("#interpretationInfo")).to_be_visible()
+        expect(help_page.locator('[data-interpretation="coverage"]')).to_contain_text(
+            scenario["text"]
+        )
+        expect(help_page.locator('[data-interpretation="positioning"]')).to_contain_text(
+            "Posicionamento contextualizado"
+        )
+        if scan_id == 35:
+            coverage = help_page.locator("#coverageInfo")
+            expect(coverage).to_contain_text("3/9 pontos válidos")
+            expect(coverage).to_contain_text("sem resultados: 6")
+            expect(coverage).to_contain_text("falhos: 0")
+            expect(help_page.locator('[data-interpretation="coverage"]')).to_contain_text(
+                "não comprova inexistência"
+            )
+
+
 def test_partial_scan_keeps_point_states_visible_in_pdf_print_view(help_page):
     help_page.route(
         "http://smart-grid.test/api/scans/22",
@@ -238,6 +376,200 @@ def test_partial_scan_keeps_point_states_visible_in_pdf_print_view(help_page):
     assert help_page.locator("#scanCard").evaluate("(el) => getComputedStyle(el).display") != "none"
 
 
+def test_real_ui_injects_branding_and_a4_print_dimensions(help_page):
+    intro = help_page.locator(".print-intro")
+    closing = help_page.locator(".print-closing")
+
+    assert intro.count() == 1
+    assert closing.count() == 1
+    expect(intro).to_contain_text("Smart Grid by ZURI")
+    expect(intro).to_contain_text("ZURI Smartech")
+    expect(closing).to_contain_text("Aumentar Visibilidade")
+    assert help_page.locator(".print-qr-link").get_attribute("href") == (
+        "https://wa.me/5511996919411"
+    )
+    assert help_page.locator(".print-qr-link img").get_attribute("src").startswith(
+        "data:image/svg+xml;base64,"
+    )
+    assert help_page.locator('.print-closing a[href="tel:+551142103311"]').count() == 1
+    assert help_page.locator(
+        '.print-closing a[href="https://www.instagram.com/zurismartech/"]'
+    ).count() == 1
+
+    help_page.emulate_media(media="print")
+    assert intro.evaluate("(el) => getComputedStyle(el).display") != "none"
+    dimensions = help_page.locator("#map").evaluate(
+        """(el) => ({
+          width: el.getBoundingClientRect().width,
+          height: el.getBoundingClientRect().height,
+        })"""
+    )
+    assert dimensions["width"] == pytest.approx(267 * 96 / 25.4, abs=1)
+    assert dimensions["height"] == pytest.approx(420 * 96 / 72, abs=1)
+
+
+def test_large_grid_uses_compact_centered_markers_in_print(help_page):
+    grid_size = 13
+    points = [
+        {
+            "row": row,
+            "col": col,
+            "lat": -23.5 + (row - 6) * 0.01,
+            "lng": -46.6 + (col - 6) * 0.01,
+            "rank": 1,
+            "status": "ok",
+            "results": [],
+        }
+        for row in range(grid_size)
+        for col in range(grid_size)
+    ]
+    scan = {
+        "id": 1313,
+        "status": "done",
+        "finished": "2026-11-27T00:00:00Z",
+        "keyword": "serviço local",
+        "business_name": "Empresa",
+        "business_cid": "target",
+        "business_place_id": None,
+        "created": "2026-11-27T00:00:00Z",
+        "grid_size": grid_size,
+        "spacing_km": 1,
+        "center_lat": -23.5,
+        "center_lng": -46.6,
+        "progress": grid_size**2,
+        "total": grid_size**2,
+        "metrics": {},
+        "comparison": None,
+        "competitors": [],
+        "points": points,
+    }
+    help_page.route(
+        "**/api/scans/1313/analysis*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"metrics": {}, "ice": {"counts": {}}, "icm": {}, "icpb_v2": {}, "iop": {}, "points": []}',
+        ),
+    )
+    help_page.route(
+        "**/api/scans/1313",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(scan),
+        ),
+    )
+
+    help_page.evaluate("openScan(1313)")
+    marker_data = help_page.evaluate(
+        """() => {
+          const markers = window.testMarkers.filter(
+            (marker) => marker.options.icon?.html?.includes('class="pin ')
+          );
+          return {
+            sizes: markers.map((marker) => marker.options.icon.iconSize),
+            locations: [...new Set(markers.map((marker) => marker.latlng.join(',')))],
+          };
+        }"""
+    )
+    assert len(marker_data["locations"]) == grid_size**2
+    assert marker_data["sizes"]
+    assert all(size == [24, 24] for size in marker_data["sizes"])
+
+    help_page.emulate_media(media="print")
+    help_page.evaluate("window.dispatchEvent(new Event('beforeprint'))")
+    assert help_page.evaluate("window.testMapCalls.at(-1)") == [
+        "panTo",
+        [-23.5, -46.6],
+        {"animate": False},
+    ]
+
+
+def test_diagnostic_page_requires_capability_before_showing_private_report(help_page):
+    diagnostic_html = (STATIC / "diagnostic.html").read_text(encoding="utf-8")
+    diagnostic_js = (STATIC / "diagnostic.js").read_text(encoding="utf-8")
+    landing_css = (STATIC / "landing.css").read_text(encoding="utf-8")
+    diagnostic_html = (
+        diagnostic_html
+        .replace('<link rel="stylesheet" href="/static/landing.css">', f"<style>{landing_css}</style>")
+        .replace('<link rel="stylesheet" href="/static/print.css">', "")
+        .replace('<script src="/static/diagnostic.js" defer></script>', "")
+        .replace("</body>", f"<script>{diagnostic_js}</script></body>")
+    )
+    help_page.route(
+        "http://smart-grid.test/diagnostico*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body=diagnostic_html,
+        ),
+    )
+    request_id = "5ba9d98b-9a7f-4f4e-a907-88bbeb1a1b22"
+    token = "a" * 64
+    help_page.add_init_script(
+        """(() => {
+          window.__privateRequests = [];
+          window.fetch = async (url, options = {}) => {
+            const request = {
+              url: String(url),
+              method: options.method || 'GET',
+              body: options.body ? JSON.parse(options.body) : null,
+            };
+            window.__privateRequests.push(request);
+            const result = request.url.includes('/report/')
+              ? {
+                  authorized: true,
+                  report: {
+                    business: {name: 'Empresa sintética'},
+                    keyword: 'serviço local',
+                    coverage: {coverage_pct: 100, valid_points: 9, requested_points: 9},
+                    analysis: {metrics: {arp: 2}},
+                  },
+                }
+              : {
+                  authorized: true,
+                  request_id: '5ba9d98b-9a7f-4f4e-a907-88bbeb1a1b22',
+                  status: 'done',
+                  progress: 9,
+                  total: 9,
+                  finished: '2026-11-27T00:00:00Z',
+                  report_ready: true,
+                };
+            return new Response(JSON.stringify(result), {
+              status: 200,
+              headers: {'Content-Type': 'application/json'},
+            });
+          };
+        })();"""
+    )
+
+    help_page.goto("http://smart-grid.test/diagnostico")
+    expect(help_page.locator("#status-message")).to_contain_text("incompleto ou inválido")
+    assert help_page.evaluate("window.__privateRequests") == []
+    assert help_page.locator("#status-details").is_hidden()
+    assert help_page.locator("#report").is_hidden()
+
+    help_page.goto(
+        f"http://smart-grid.test/diagnostico?authorized=1#request_id={request_id}&token={token}"
+    )
+    expect(help_page.locator("#status-details")).to_be_visible()
+    requests = help_page.evaluate("window.__privateRequests")
+    assert len(requests) == 1
+    assert token not in requests[0]["url"]
+    assert requests[0]["method"] == "POST"
+    assert requests[0]["body"]["status_token"] == token
+    assert help_page.locator("#report").is_hidden()
+
+    help_page.locator("#report-link").click()
+    expect(help_page.locator("#report")).to_be_visible()
+    expect(help_page.locator("#report-content")).to_contain_text("Empresa sintética")
+    requests = help_page.evaluate("window.__privateRequests")
+    assert len(requests) == 2
+    assert token not in requests[1]["url"]
+    assert requests[1]["method"] == "POST"
+    assert requests[1]["body"]["status_token"] == token
+
+
 def test_help_panel_fits_and_scrolls_on_mobile(help_page):
     help_page.set_viewport_size({"width": 390, "height": 700})
     help_page.locator("#helpMenuBtn").click()
@@ -275,6 +607,13 @@ def test_index_injects_maptiler_key_from_environment_safely(monkeypatch):
 
     assert 'content="key&quot; onload=&quot;alert(1)"' in html
     assert "__GEOGRID_MAPTILER_API_KEY__" not in html
+    assert "__ZURI_PRINT_INTRO__" not in html
+    assert "__ZURI_PRINT_CLOSING__" not in html
+    assert "Smart Grid by ZURI" in html
+    assert "ZURI Smartech" in html
+    assert "https://zurismartech.com.br" in html
+    assert "https://wa.me/5511996919411" in html
+    assert "data:image/svg+xml;base64," in html
 
 
 def test_missing_maptiler_key_does_not_fall_back_to_public_osm(browser, monkeypatch):
@@ -350,6 +689,64 @@ def test_indicator_preferences_default_persist_and_restore(help_page):
     assert help_page.evaluate(
         "Object.values(JSON.parse(localStorage.getItem('geogrid.indicatorPreferences'))).every(Boolean)"
     ) is True
+
+
+def test_competitor_contacts_and_point_positions_are_rendered_without_inference(help_page):
+    help_page.evaluate(
+        """
+        () => {
+          S.scan = {
+            business_name: "Alvo",
+            points: [
+              {row: 0, col: 0, status: "ok", results: [
+                {name: "Concorrente Celular", cid: "cid-mobile", place_id: "place-mobile",
+                 phone: "+55 11 99999-9999", url: "https://mobile.example.br", position: 4},
+                {name: "Concorrente Fixo", cid: "cid-fixed", place_id: "place-fixed",
+                 phone: "+55 11 3333-4444", position: 1},
+                {name: "Concorrente sem contato", cid: "cid-none", position: null},
+              ]},
+            ],
+            competitors: [
+              {name: "Concorrente Celular", cid: "cid-mobile", place_id: "place-mobile",
+               solv: 10, atrp: 4, found_pct: 20, rating: 4.5},
+              {name: "Concorrente Fixo", cid: "cid-fixed", place_id: "place-fixed",
+               solv: 20, atrp: 1, found_pct: 40, rating: 4.2},
+              {name: "Concorrente sem contato", cid: "cid-none",
+               solv: 0, atrp: 21, found_pct: 0, rating: null},
+            ],
+          };
+          renderCompetitors();
+        }
+        """
+    )
+
+    rows = help_page.locator("#compTable tbody tr")
+    assert rows.count() == 3
+    mobile = rows.nth(0)
+    assert mobile.locator(".competitor-contact").get_by_text("Celular").count() == 1
+    assert mobile.locator('a[href="tel:+5511999999999"]').count() == 1
+    assert mobile.locator('a[href="https://mobile.example.br/"]').count() == 1
+    assert "CID: cid-mobile" in mobile.locator(".competitor-identifiers").inner_text()
+    assert "Place ID: place-mobile" in mobile.locator(".competitor-identifiers").inner_text()
+    assert "posição original observada: #4 no ponto L1, C1" in mobile.locator(
+        ".position-summary"
+    ).inner_text()
+    assert "ATRP: 4" in mobile.locator("td").nth(5).inner_text()
+
+    fixed = rows.nth(1)
+    assert fixed.locator(".competitor-contact").get_by_text("Telefone fixo").count() == 1
+
+    unavailable = rows.nth(2)
+    assert unavailable.locator(".competitor-contact").get_by_text(
+        "Contato indisponível"
+    ).count() == 1
+    assert "CID: cid-none" in unavailable.locator(".competitor-identifiers").inner_text()
+    assert "Place ID: Indisponível" in unavailable.locator(
+        ".competitor-identifiers"
+    ).inner_text()
+    assert help_page.evaluate(
+        'classifyBrazilPhone("+44 20 7946 0958")'
+    ) == "Tipo não classificado"
 
 
 def test_indicator_preferences_hide_views_cards_and_competitor_columns(help_page):

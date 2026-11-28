@@ -162,13 +162,17 @@ let centerMarker = null, bizMarker = null;
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+  if (!res.ok) {
+    const error = new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+    error.status = res.status;
+    throw error;
+  }
   return body;
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = (v, suffix = "") => (v === null || v === undefined ? "–" : `${v}${suffix}`);
-const when = (iso) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-const gridLabel = (s) => `${s.grid_size}×${s.grid_size} @ ${+s.spacing_km.toFixed(2)} km`;
+const when = (iso) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const gridLabel = (s) => `grade ${s.grid_size}×${s.grid_size} · espaçamento ${+s.spacing_km.toFixed(2)} km`;
 function say(sel, kind, text) { const el = $(sel); el.className = `small ${kind}`; el.textContent = text; }
 
 function offset(lat, lng, northKm, eastKm) {
@@ -193,6 +197,52 @@ function sameBiz(r, key) {
   if (key.cid && r.cid) return r.cid === key.cid;
   if (key.place_id && r.place_id) return r.place_id === key.place_id;
   return (r.name || "").toLowerCase() === (key.name || "").toLowerCase();
+}
+const BRAZIL_DDDS = new Set(
+  "11 12 13 14 15 16 17 18 19 21 22 24 27 28 31 32 33 34 35 37 38 41 42 43 44 45 46 47 48 49 51 53 54 55 61 62 63 64 65 66 67 68 69 71 73 74 75 77 79 81 82 83 84 85 86 87 88 89 91 92 93 94 95 96 97 98 99".split(" "),
+);
+function classifyBrazilPhone(value) {
+  if (typeof value !== "string" || !value.trim()) return "Contato indisponível";
+  const raw = value.trim();
+  const digits = raw.replace(/\D/g, "");
+  if (raw.startsWith("+") && !raw.startsWith("+55")) return "Tipo não classificado";
+  let local = digits;
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    local = digits.slice(2);
+  }
+  if (local.length !== 10 && local.length !== 11) return "Tipo não classificado";
+  if (!BRAZIL_DDDS.has(local.slice(0, 2))) return "Tipo não classificado";
+  const subscriber = local.slice(2);
+  if (subscriber.length === 9 && subscriber.startsWith("9")) return "Celular";
+  if (subscriber.length === 8 && /^[2-5]/.test(subscriber)) return "Telefone fixo";
+  return "Tipo não classificado";
+}
+function safePhoneHref(value) {
+  const tel = String(value || "").trim().replace(/[^\d+]/g, "");
+  return /^\+?\d{7,15}$/.test(tel) ? `tel:${tel}` : null;
+}
+function safeWebsiteHref(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const parsed = new URL(candidate);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+function competitorOccurrences(competitor) {
+  return (S.scan.points || []).flatMap((point) => {
+    if (point.status !== "ok") return [];
+    const result = (point.results || []).find((item) => sameBiz(item, competitor));
+    if (!result) return [];
+    const position = Number.isSafeInteger(result.position) && result.position > 0
+      ? result.position
+      : null;
+    return [{ row: point.row, col: point.col, position }];
+  });
 }
 function rankIn(results, key) {
   const i = (results || []).findIndex((r) => sameBiz(r, key));
@@ -282,13 +332,15 @@ function showPreview() {  // leave the scan view and show the grid that will be 
   if (S.scan && S.scan.status !== "running") closeScan();
   drawPreview();
 }
-function fitGrid() {
+function fitGrid(forPrint = false) {
   if (!S.center) return;
   const [n, km, c] = S.scan
     ? [S.scan.grid_size, S.scan.spacing_km, [S.scan.center_lat, S.scan.center_lng]]
     : [+$("#gridSize").value, spacingKm(), S.center];
   const h = (Math.floor(n / 2) + 0.7) * km;
-  const pad = cardPadding();
+  const pad = forPrint
+    ? { topLeft: [24, 24], bottomRight: [24, 24] }
+    : cardPadding();
   map.fitBounds([offset(c[0], c[1], -h, -h), offset(c[0], c[1], h, h)], { paddingTopLeft: pad.topLeft, paddingBottomRight: pad.bottomRight });
 }
 ["#gridSize", "#spacing", "#unit"].forEach((s) => $(s).addEventListener("input", () => { showPreview(); fitGrid(); }));
@@ -297,20 +349,47 @@ $("#keywords").addEventListener("input", updateHint);
 // ---------- run ----------
 function keywords() { return $("#keywords").value.split("\n").map((k) => k.trim()).filter(Boolean); }
 
+const scanUrl = $('meta[name="manual-scan-url"]').content;
+const manualLive = scanUrl === "/api/commercial/admin/live-scans";
+$("#liveLogin").hidden = !manualLive;
+const liveRetryStorage = "geogrid-manual-live-request";
+
 $("#runBtn").addEventListener("click", async () => {
   const kws = keywords();
   if (!S.business) return;
   if (!kws.length) { say("#runMsg", "err", "Enter at least one keyword."); return; }
   $("#runBtn").disabled = true; $("#runMsg").textContent = "";
   try {
-    const { scan_ids } = await api("/api/scans", { method: "POST", body: JSON.stringify({
+    const body = JSON.stringify({
       business_id: S.business.id, keywords: kws, grid_size: +$("#gridSize").value,
       spacing_km: +spacingKm().toFixed(4), center_lat: S.center[0], center_lng: S.center[1],
-    }) });
+    });
+    const headers = { "Content-Type": "application/json" };
+    if (manualLive) {
+      const previous = JSON.parse(sessionStorage.getItem(liveRetryStorage) || "null");
+      if (previous && previous.body !== body) {
+        throw new Error("Há um pedido Live pendente. Reenvie os mesmos parâmetros para recuperar o status.");
+      }
+      const pending = previous || { body, key: crypto.randomUUID() };
+      sessionStorage.setItem(liveRetryStorage, JSON.stringify(pending));
+      headers["Idempotency-Key"] = pending.key;
+    }
+    const { scan_ids, status } = await api(scanUrl, { method: "POST", headers, body });
+    if (!scan_ids.length) {
+      if (status === "failed" || status === "released") {
+        sessionStorage.removeItem(liveRetryStorage);
+      }
+      say("#runMsg", "err", `Pedido Live com status ${status}.`);
+      return;
+    }
+    if (manualLive) sessionStorage.removeItem(liveRetryStorage);
     say("#runMsg", "ok", `Started ${scan_ids.length} scan${scan_ids.length > 1 ? "s" : ""}.`);
     await loadHistory();
     await openScan(scan_ids[0]);
   } catch (err) {
+    if (manualLive && [409, 422].includes(err.status)) {
+      sessionStorage.removeItem(liveRetryStorage);
+    }
     say("#runMsg", "err", err.message);
   } finally { $("#runBtn").disabled = false; }
 });
@@ -357,7 +436,7 @@ function scanIsActive(scan) {
     || (scan.status === "partial" && !scan.finished);
 }
 function scanHasFinalAnalysis(scan) {
-  return ["done", "partial"].includes(scan.status) && !scanIsActive(scan);
+  return ["done", "partial", "failed"].includes(scan.status) && !scanIsActive(scan);
 }
 async function openScan(id, { keepView = false } = {}) {
   const scan = await api(`/api/scans/${id}`);
@@ -391,17 +470,18 @@ function renderScan(fit) {
     prog.classList.remove("hidden");
     prog.querySelector("div").style.width = `${(100 * s.progress) / s.total}%`;
     prog.querySelector("span").textContent = s.status === "queued" || !s.progress
-      ? "Queued / starting…"
-      : `${s.status === "partial" ? "Partial results" : "Processing"} ${s.progress} / ${s.total} points…`;
+      ? "Na fila / iniciando…"
+      : `${s.status === "partial" ? "Resultados parciais" : "Processando"} ${s.progress} / ${s.total} pontos…`;
   } else prog.classList.add("hidden");
 
   renderCoverage();
   renderMetrics();
+  renderInterpretation();
   const info = $("#analysisInfo");
   if (S.analysis) {
     const ice = S.analysis.ice?.counts || {};
     const analysisDetails = [
-      `Base de ARP/ATRP/SoLV/Found/IVL: ${coverageSummary(s).valid}/${coverageSummary(s).requested} pontos válidos`,
+      `Base de ARP/ATRP/SoLV/Presença/IVL: ${coverageSummary(s).valid}/${coverageSummary(s).requested} pontos válidos`,
       indicatorEnabled("ida")
         ? `IDA: ${S.analysis.ida_evaluated_points ?? 0}/${coverageSummary(s).valid} pontos válidos avaliados · ${fmt(S.analysis.ida_coverage_pct, "%")} cobertura`
         : null,
@@ -426,7 +506,7 @@ function renderScan(fit) {
   }
   const cmp = s.comparison;
   $("#deltaBtn").disabled = !cmp;
-  $("#deltaBtn").title = cmp ? `Compared with ${when(cmp.previous_created)}` : "Needs an earlier scan with the same keyword and grid";
+  $("#deltaBtn").title = cmp ? `Comparação com ${when(cmp.previous_created)}` : "Requer pesquisa anterior com a mesma palavra-chave e grade";
   if (!cmp && S.mode === "delta") S.mode = "rank";
   if (S.mode === "difficulty" && (!indicatorEnabled("ida") || !S.analysis)) S.mode = "rank";
   if (S.mode === "opportunity" && (!indicatorEnabled("iop") || S.analysis?.iop?.score == null)) S.mode = "rank";
@@ -435,7 +515,7 @@ function renderScan(fit) {
   $("#rankLegend").classList.toggle("hidden", S.mode === "difficulty" || S.mode === "opportunity");
   document.querySelectorAll("#viewToggle button").forEach((b) => b.classList.toggle("on", b.dataset.mode === S.mode));
   $("#viewing").innerHTML = S.competitor
-    ? `<span class="chip">Showing: <b>${esc(S.competitor.name)}</b> <a href="#" id="clearComp">✕ back to my business</a></span>` : "";
+    ? `<span class="chip">Exibindo: <b>${esc(S.competitor.name)}</b> <a href="#" id="clearComp">✕ voltar à empresa pesquisada</a></span>` : "";
   const clr = $("#clearComp");
   if (clr) clr.addEventListener("click", (e) => { e.preventDefault(); S.competitor = null; renderScan(false); });
 
@@ -443,6 +523,24 @@ function renderScan(fit) {
   updateIndicatorVisibility();
   drawScanGrid();
   if (fit) fitGrid();
+}
+
+function renderInterpretation() {
+  const panel = $("#interpretationInfo");
+  const interpretation = S.analysis?.interpretation;
+  const sections = ["coverage", "positioning", "competition"];
+  let visible = false;
+
+  sections.forEach((section) => {
+    const element = panel.querySelector(`[data-interpretation="${section}"]`);
+    const text = typeof interpretation?.[section] === "string"
+      ? interpretation[section]
+      : "";
+    element.textContent = text;
+    element.parentElement.hidden = !text;
+    visible ||= Boolean(text);
+  });
+  panel.classList.toggle("hidden", !visible);
 }
 
 function coverageSummary(scan) {
@@ -503,12 +601,12 @@ function renderMetrics() {
     const good = lowerBetter ? v < 0 : v > 0;
     return `<div class="d ${good ? "up" : "down"}">${v > 0 ? "+" : ""}${v}</div>`;
   };
-  if (s.status === "failed") { $("#metrics").innerHTML = `<div class="err small" style="grid-column:1/-1">Scan failed: ${esc(s.error)}</div>`; return; }
+  if (s.status === "failed") { $("#metrics").innerHTML = `<div class="err small" style="grid-column:1/-1">Pesquisa com falha: ${esc(s.error)}</div>`; return; }
   const metrics = [
-    ["arp", "ARP", fmt(m.arp), "avg rank where found", delta("arp", true)],
-    ["atrp", "ATRP", fmt(m.atrp), "avg rank, 20+ = 21", delta("atrp", true)],
-    ["solv", "SoLV", fmt(m.solv, "%"), "points in top 3", delta("solv", false)],
-    ["found", "Found", fmt(m.found_pct, "%"), "points in top 20", delta("found_pct", false)],
+    ["arp", "ARP", fmt(m.arp), "posição média quando encontrada", delta("arp", true)],
+    ["atrp", "ATRP", fmt(m.atrp), "posição média; 20+ equivale a 21", delta("atrp", true)],
+    ["solv", "SoLV", fmt(m.solv, "%"), "pontos entre os três primeiros", delta("solv", false)],
+    ["found", "Presença", fmt(m.found_pct, "%"), "pontos entre os 20 primeiros", delta("found_pct", false)],
     ["ivl", "IVL", S.competitor ? "–" : fmt(S.analysis?.metrics?.ivl, "%"), "Indice de visibilidade local (pontos validos)", ""],
     ["ida", "IDA", S.competitor ? "–" : fmt(S.analysis?.ida_average), "Indice experimental de dificuldade (0 a 100)", ""],
     ["icm", "ICM", S.competitor ? "–" : fmt(S.analysis?.icm?.score), "ICM experimental do negócio monitorado, somente se observado", ""],
@@ -528,13 +626,63 @@ function renderCompetitors() {
   const s = S.scan, list = s.competitors || [];
   $("#compCard").classList.toggle("hidden", !list.length);
   const me = myKey();
-  $("#compTable tbody").innerHTML = list.map((c, i) => `
+  $("#compTable tbody").innerHTML = list.map((c, i) => {
+    const occurrences = competitorOccurrences(c);
+    const bestPosition = occurrences
+      .filter((entry) => entry.position !== null)
+      .sort((a, b) => a.position - b.position || a.row - b.row || a.col - b.col)[0];
+    const positionSummary = bestPosition
+      ? `Melhor posição original observada: #${bestPosition.position} no ponto L${bestPosition.row + 1}, C${bestPosition.col + 1}`
+      : "Posição original não informada pelo provedor";
+    const positions = occurrences.length
+      ? `<details class="point-positions"><summary>Ver posições por ponto (${occurrences.length})</summary><ul>${occurrences.map((entry) => `<li>Ponto L${entry.row + 1}, C${entry.col + 1}: ${entry.position === null ? "posição original não informada" : `posição original #${entry.position}`}</li>`).join("")}</ul></details>`
+      : "";
+    const pointResults = (s.points || [])
+      .filter((point) => point.status === "ok")
+      .flatMap((point) => (point.results || []).filter((item) => sameBiz(item, c)));
+    const values = (field) => [...new Set(
+      pointResults.map((item) => item[field]).filter((value) => typeof value === "string" && value.trim()),
+    )];
+    const phones = values("phone");
+    const websites = values("url");
+    const cids = [...new Set([c.cid, ...values("cid")].filter((value) => typeof value === "string" && value))];
+    const placeIds = [...new Set([c.place_id, ...values("place_id")].filter((value) => typeof value === "string" && value))];
+    const phoneHtml = phones.length
+      ? phones.map((phone) => {
+        const href = safePhoneHref(phone);
+        const label = `${esc(phone)} <span class="contact-type">(${esc(classifyBrazilPhone(phone))})</span>`;
+        return href ? `<a href="${esc(href)}">${label}</a>` : label;
+      }).join("<br>")
+      : "Indisponível <span class=\"contact-type\">(Contato indisponível)</span>";
+    const websiteHtml = websites.length
+      ? websites.map((website) => {
+        const href = safeWebsiteHref(website);
+        return href
+          ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(website)}</a>`
+          : esc(website);
+      }).join("<br>")
+      : "Indisponível";
+    const identifiersHtml = [
+      `CID: ${cids.length ? cids.map(esc).join(", ") : "Indisponível"}`,
+      `Place ID: ${placeIds.length ? placeIds.map(esc).join(", ") : "Indisponível"}`,
+    ].join("<br>");
+    return `
     <tr data-i="${i}" class="${sameBiz(c, me) ? "me" : ""} ${S.competitor && sameBiz(c, S.competitor) ? "sel" : ""}">
-      <td>${i + 1}</td><td title="${esc(c.name)}${c.category ? " · " + esc(c.category) : ""}">${esc(c.name)}</td>
-      <td data-indicator-column="solv">${c.solv}%</td><td data-indicator-column="atrp">${c.atrp}</td><td data-indicator-column="found">${c.found_pct}%</td><td>${fmt(c.rating)}</td></tr>`).join("");
+      <td>${i + 1}</td>
+      <td class="competitor-name" title="${esc(c.name)}${c.category ? " · " + esc(c.category) : ""}">
+        <strong>${esc(c.name)}</strong><div class="position-summary">${positionSummary}</div>${positions}
+      </td>
+      <td class="competitor-contact"><div>Telefone: ${phoneHtml}</div><div>Website: ${websiteHtml}</div></td>
+      <td class="competitor-identifiers">${identifiersHtml}</td>
+      <td data-indicator-column="solv">${c.solv}%</td>
+      <td data-indicator-column="atrp" title="Posição média da empresa nos pontos da grade">ATRP: ${c.atrp}</td>
+      <td data-indicator-column="found">${c.found_pct}%</td><td>${fmt(c.rating)}</td>
+    </tr>`;
+  }).join("");
   updateIndicatorVisibility();
 }
 $("#compTable tbody").addEventListener("click", (e) => {
+  if (e.target.closest("a, details")) return;
   const tr = e.target.closest("tr"); if (!tr) return;
   const c = S.scan.competitors[+tr.dataset.i];
   const isMe = sameBiz(c, myKey());
@@ -554,6 +702,7 @@ function drawScanGrid() {
   const byCell = new Map(s.points.map((p) => [`${p.row},${p.col}`, p]));
   const pts = gridPoints(s.center_lat, s.center_lng, s.grid_size, s.spacing_km);
   const pad = cardPadding();
+  const markerSize = s.grid_size >= 11 ? 24 : 34;
   pts.forEach(([lat, lng], idx) => {
     const row = Math.floor(idx / s.grid_size), col = idx % s.grid_size;
     const p = byCell.get(`${row},${col}`);
@@ -586,7 +735,10 @@ function drawScanGrid() {
         }
       } else { cls = rankClass(rank); label = rank ?? "20+"; }
     }
-    const m = L.marker([lat, lng], { icon: L.divIcon({ className: "", html: `<div class="pin ${cls}" style="${iconStyle}">${label}</div>`, iconSize: [34, 34] }) });
+    const markerStyle = [iconStyle, `--pin-size:${markerSize}px`, `--pin-font-size:${markerSize >= 34 ? 13 : 10}px`]
+      .filter(Boolean)
+      .join(";");
+    const m = L.marker([lat, lng], { icon: L.divIcon({ className: "", html: `<div class="pin ${cls}" style="${markerStyle}">${label}</div>`, iconSize: [markerSize, markerSize] }) });
     m.bindPopup(() => popupHtml(p, key), { maxWidth: 320, autoPanPaddingTopLeft: L.point(pad.topLeft), autoPanPaddingBottomRight: L.point(pad.bottomRight) });
     m.addTo(gridLayer);
   });
@@ -640,6 +792,18 @@ document.querySelectorAll("#viewToggle button").forEach((b) => b.addEventListene
   renderScan(false);
 }));
 
+window.addEventListener("beforeprint", () => {
+  map.invalidateSize({ pan: false });
+  fitGrid(true);
+  const center = S.scan
+    ? [S.scan.center_lat, S.scan.center_lng]
+    : S.center;
+  if (center) map.panTo(center, { animate: false });
+});
+window.addEventListener("afterprint", () => {
+  map.invalidateSize({ pan: false });
+  fitGrid();
+});
 $("#printBtn").addEventListener("click", () => window.print());
 $("#deleteBtn").addEventListener("click", async () => {
   if (!S.scan || !confirm(`Delete scan “${S.scan.keyword}” from ${when(S.scan.created)}?`)) return;

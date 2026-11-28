@@ -1,13 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="manual-scan-url" content="__GEOGRID_MANUAL_SCAN_URL__">
 <meta name="maptiler-api-key" content="__GEOGRID_MAPTILER_API_KEY__">
 <title>Smart Grid by ZURI</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/print.css">
 </head>
 <body>
 <aside id="side">
@@ -57,6 +59,7 @@
     <div class="small muted">Drag the <b>blue center pin</b> to move the grid. <a href="#" id="previewGrid">Preview grid</a> · <a href="#" id="resetCenter">Reset to business</a></div>
     <button id="runBtn" class="primary" disabled>Run scan</button>
     <div id="runMsg" class="small"></div>
+    <a id="liveLogin" href="/api/commercial/admin" target="_blank" rel="noopener" hidden>Entrar como operador</a>
   </section>
 
   <section class="grow">
@@ -204,6 +207,7 @@
 </dialog>
 
 <main>
+  __ZURI_PRINT_INTRO__
   <div id="map"></div>
   <div id="mapTileStatus" class="map-tile-status hidden" role="status">
     Configure GEOGRID_MAPTILER_API_KEY no ambiente para carregar o mapa.
@@ -216,31 +220,37 @@
         <div id="scanSub" class="muted small"></div>
       </div>
       <div class="actions">
-        <button id="printBtn" class="ghost" title="Export as PDF via the print dialog">PDF</button>
-        <button id="deleteBtn" class="ghost danger" title="Delete this scan">Delete</button>
+        <button id="printBtn" class="ghost" title="Salvar o relatório como PDF">Salvar PDF</button>
+        <button id="deleteBtn" class="ghost danger" title="Excluir esta pesquisa">Excluir</button>
       </div>
     </div>
     <div id="progress" class="progress hidden"><div></div><span></span></div>
     <div id="coverageInfo" class="coverage-info small" role="status" aria-live="polite"></div>
     <div id="metrics" class="metrics"></div>
     <div class="toggle" id="viewToggle">
-      <button data-mode="rank" class="on">Ranks</button>
+      <button data-mode="rank" class="on">Posições</button>
       <button data-mode="difficulty" id="difficultyBtn" title="Dificuldade experimental da area">Dificuldade</button>
       <button data-mode="opportunity" id="opportunityBtn" title="IOP experimental não validado; não é previsão">Oportunidade</button>
-      <button data-mode="delta" id="deltaBtn" disabled title="Needs an earlier scan with the same keyword and grid">Change vs previous</button>
+      <button data-mode="delta" id="deltaBtn" disabled title="Requer pesquisa anterior com a mesma palavra-chave e grade">Variação vs. anterior</button>
     </div>
     <div id="analysisInfo" class="small muted"></div>
+    <section id="interpretationInfo" class="interpretation-info hidden" aria-live="polite">
+      <h3>Interpretação do diagnóstico</h3>
+      <p><strong>Cobertura e execução:</strong> <span data-interpretation="coverage"></span></p>
+      <p><strong>Posicionamento:</strong> <span data-interpretation="positioning"></span></p>
+      <p><strong>Concorrência:</strong> <span data-interpretation="competition"></span></p>
+    </section>
     <div id="viewing" class="small"></div>
   </div>
 
   <div id="compCard" class="card hidden">
     <div class="card-head">
-      <div class="title">Competitors <span class="muted small">click a row to map their ranks</span></div>
+      <div class="title">Concorrentes <span class="muted small">selecione uma linha para ver as posições no mapa</span></div>
       <button id="compToggle" class="ghost">–</button>
     </div>
     <div id="compBody">
       <table id="compTable">
-        <thead><tr><th>#</th><th>Business</th><th data-indicator-column="solv">SoLV</th><th data-indicator-column="atrp">ATRP</th><th data-indicator-column="found">Found</th><th>★</th></tr></thead>
+        <thead><tr><th>#</th><th>Empresa / posição original observada</th><th>Contato</th><th>Identificadores</th><th data-indicator-column="solv">SoLV</th><th data-indicator-column="atrp">ATRP (média)</th><th data-indicator-column="found">Presença</th><th>★</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -262,6 +272,7 @@
     <span><i class="sw iop"></i>IOP experimental: menor → maior oportunidade</span>
     <span><i class="sw rx"></i>sem dados/erro</span>
   </div>
+  __ZURI_PRINT_CLOSING__
 </main>
 
 <script src="/static/app.js"></script>

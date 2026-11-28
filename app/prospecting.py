@@ -150,6 +150,18 @@ def capture_completed_scan(scan_id: int) -> dict:
                     "identity_type": identity_type,
                     "identity_hash": identity_hash,
                     "name": str(result.get("name", "")).strip()[:200],
+                    "phone": (
+                        result.get("phone").strip()
+                        if isinstance(result.get("phone"), str)
+                        and result.get("phone").strip()
+                        else None
+                    ),
+                    "website": (
+                        result.get("url").strip()
+                        if isinstance(result.get("url"), str)
+                        and result.get("url").strip()
+                        else None
+                    ),
                     "cid": result.get("cid"),
                     "place_id": result.get("place_id"),
                     "address": result.get("address"),
@@ -157,6 +169,13 @@ def capture_completed_scan(scan_id: int) -> dict:
                     "lat": result.get("lat"),
                     "lng": result.get("lng"),
                     "result_rank": result_rank,
+                    "provider_position": (
+                        result["position"]
+                        if isinstance(result.get("position"), int)
+                        and not isinstance(result.get("position"), bool)
+                        and result["position"] > 0
+                        else None
+                    ),
                     "point_row": point["row"],
                     "point_col": point["col"],
                 }
@@ -170,6 +189,7 @@ def capture_completed_scan(scan_id: int) -> dict:
                                 candidate["point_row"],
                                 candidate["point_col"],
                                 candidate["result_rank"],
+                                candidate["provider_position"],
                             )
                         ],
                     }
@@ -179,11 +199,17 @@ def capture_completed_scan(scan_id: int) -> dict:
                             candidate["point_row"],
                             candidate["point_col"],
                             candidate["result_rank"],
+                            candidate["provider_position"],
                         )
                     )
+                    for key in ("phone", "website"):
+                        if not current[key] and candidate[key]:
+                            current[key] = candidate[key]
                     if candidate["result_rank"] < current["result_rank"]:
                         for key in (
                             "name",
+                            "phone",
+                            "website",
                             "cid",
                             "place_id",
                             "address",
@@ -207,22 +233,24 @@ def capture_completed_scan(scan_id: int) -> dict:
             else:
                 new_candidates += 1
             best_rank = min(
-                rank
-                for _, _, rank in candidate["observations"]
+                result_rank
+                for _, _, result_rank, _ in candidate["observations"]
             )
             connection.execute(
                 "INSERT INTO commercial_prospects ("
                 "identity_hash, identity_type, source_provider, source_license, "
-                "data_mode, storage_authorized, export_eligible, name, cid, place_id, "
-                "address, category, lat, lng, first_seen_at, last_seen_at, "
+                "data_mode, storage_authorized, export_eligible, name, phone, website, "
+                "cid, place_id, address, category, lat, lng, first_seen_at, last_seen_at, "
                 "observation_count, best_rank, qualification"
-                ") VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) "
+                ") VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?) "
                 "ON CONFLICT(identity_hash) DO UPDATE SET "
                 "last_seen_at = excluded.last_seen_at, "
                 "best_rank = CASE WHEN commercial_prospects.best_rank IS NULL "
                 "THEN excluded.best_rank WHEN excluded.best_rank IS NULL "
                 "THEN commercial_prospects.best_rank ELSE MIN(commercial_prospects.best_rank, excluded.best_rank) END, "
                 "export_eligible = MAX(commercial_prospects.export_eligible, excluded.export_eligible), "
+                "phone = COALESCE(excluded.phone, commercial_prospects.phone), "
+                "website = COALESCE(excluded.website, commercial_prospects.website), "
                 "address = COALESCE(commercial_prospects.address, excluded.address), "
                 "category = COALESCE(commercial_prospects.category, excluded.category), "
                 "lat = COALESCE(commercial_prospects.lat, excluded.lat), "
@@ -235,6 +263,8 @@ def capture_completed_scan(scan_id: int) -> dict:
                     data_mode,
                     export_eligible,
                     candidate["name"],
+                    candidate["phone"],
+                    candidate["website"],
                     candidate["cid"],
                     candidate["place_id"],
                     candidate["address"],
@@ -251,12 +281,13 @@ def capture_completed_scan(scan_id: int) -> dict:
                 "SELECT id FROM commercial_prospects WHERE identity_hash = ?",
                 (candidate["identity_hash"],),
             ).fetchone()
-            for point_row, point_col, result_rank in candidate["observations"]:
+            for point_row, point_col, result_rank, provider_position in candidate["observations"]:
                 inserted = connection.execute(
                     "INSERT OR IGNORE INTO commercial_prospect_observations ("
                     "prospect_id, lead_id, diagnostic_id, scan_id, keyword, point_row, "
-                    "point_col, result_rank, record_status, source_provider, observed_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "point_col, result_rank, provider_position, record_status, "
+                    "source_provider, observed_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         prospect["id"],
                         diagnostic["lead_id"],
@@ -266,6 +297,7 @@ def capture_completed_scan(scan_id: int) -> dict:
                         point_row,
                         point_col,
                         result_rank,
+                        provider_position,
                         "previously_known" if existing else "new",
                         provider,
                         observed_at,
@@ -328,7 +360,7 @@ def list_prospects(
         parameters.append(int(export_eligible))
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with db.connect() as connection:
-        return [
+        items = [
             dict(row)
             for row in connection.execute(
                 "SELECT p.*, COUNT(DISTINCT o.diagnostic_id) AS diagnostics_seen, "
@@ -341,6 +373,8 @@ def list_prospects(
                 (*parameters, limit),
             )
         ]
+        _attach_provider_positions(connection, items)
+        return items
 
 
 def list_leads(
@@ -374,11 +408,11 @@ def exportable_prospects() -> list[dict]:
     if not prospecting_storage_approved():
         return []
     with db.connect() as connection:
-        return [
+        items = [
             dict(row)
             for row in connection.execute(
-                "SELECT name, address, category, place_id, cid, first_seen_at, "
-                "last_seen_at, observation_count, best_rank, qualification, "
+                "SELECT id, name, phone, website, address, category, place_id, cid, "
+                "first_seen_at, last_seen_at, observation_count, best_rank, qualification, "
                 "source_provider, (SELECT latest.record_status "
                 "FROM commercial_prospect_observations latest "
                 "WHERE latest.prospect_id = commercial_prospects.id "
@@ -389,6 +423,42 @@ def exportable_prospects() -> list[dict]:
                 "ORDER BY last_seen_at DESC, name"
             )
         ]
+        _attach_provider_positions(connection, items)
+        for item in items:
+            item["best_rank_in_any_point"] = item["best_rank"]
+        return items
+
+
+def _attach_provider_positions(connection, items: list[dict]) -> None:
+    if not items:
+        return
+    by_id = {item["id"]: item for item in items}
+    ids = list(by_id)
+    for offset in range(0, len(ids), 500):
+        batch = ids[offset : offset + 500]
+        placeholders = ",".join("?" for _ in batch)
+        observations = connection.execute(
+            "SELECT prospect_id, point_row, point_col, provider_position "
+            "FROM commercial_prospect_observations "
+            f"WHERE prospect_id IN ({placeholders}) AND provider_position IS NOT NULL "
+            "ORDER BY point_row, point_col, id",
+            batch,
+        )
+        positions: dict[int, list[dict[str, int]]] = {}
+        for observation in observations:
+            positions.setdefault(observation["prospect_id"], []).append(
+                {
+                    "point_row": observation["point_row"],
+                    "point_col": observation["point_col"],
+                    "position": observation["provider_position"],
+                }
+            )
+        for prospect_id, item in by_id.items():
+            item["provider_positions_by_point"] = json.dumps(
+                positions.get(prospect_id, []),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
 
 
 def exportable_leads() -> list[dict]:

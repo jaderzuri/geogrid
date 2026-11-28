@@ -1,5 +1,8 @@
 import asyncio
+import csv
 import hashlib
+import io
+import json
 import time
 import uuid
 
@@ -643,6 +646,9 @@ def test_real_express_uses_confirmed_place_and_idempotent_n8n_request(api, monke
     competitor = {
         "name": "Concorrente Fictício",
         "cid": "mock-competitor-cid",
+        "phone": "+55 11 99999-9999",
+        "url": "https://concorrente.example.br",
+        "position": 2,
         "address": "Rua Fictícia, 10, São Paulo",
         "category": "cafeteria",
     }
@@ -689,8 +695,31 @@ def test_real_express_uses_confirmed_place_and_idempotent_n8n_request(api, monke
     )
     assert len(prospects) == 1
     assert prospects[0]["name"] == "Concorrente Fictício"
+    assert prospects[0]["phone"] == "+55 11 99999-9999"
+    assert prospects[0]["website"] == "https://concorrente.example.br"
     assert prospects[0]["record_status"] == "new"
+    positions = json.loads(prospects[0]["provider_positions_by_point"])
+    assert len(positions) == 9
+    assert {item["position"] for item in positions} == {2}
+    external_scan = db.get_external_scan("t2s-demo", scan["scan_id"])
+    assert external_scan is not None
+    stored_scan = db.get_scan(external_scan["id"])
+    stored_target = stored_scan["points"][0]["results"][0]
+    assert stored_target["phone"] is None
+    assert stored_target["url"] is None
     assert len(prospecting.exportable_prospects()) == 1
+    login = api.post(
+        "/api/commercial/admin/login",
+        json={"operator_id": "operator.test", "operator_token": OPERATOR_TOKEN},
+    )
+    assert login.status_code == 200
+    exported_csv = api.get("/api/commercial/admin/export/prospects.csv")
+    assert exported_csv.status_code == 200
+    assert "+55 11 99999-9999" in exported_csv.text
+    assert "https://concorrente.example.br" in exported_csv.text
+    assert "best_rank_in_any_point" in exported_csv.text
+    csv_rows = list(csv.DictReader(io.StringIO(exported_csv.content.decode("utf-8-sig"))))
+    assert len(json.loads(csv_rows[0]["provider_positions_by_point"])) == 9
 
     order_payload = {
         "request_id": str(uuid.uuid4()),

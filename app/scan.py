@@ -3,10 +3,11 @@ import asyncio
 import hashlib
 import logging
 import os
+from collections.abc import Awaitable, Callable
 
 from . import db
 from .fetchers.base import Fetcher, FetchStatusError
-from .grid import make_grid, validate_grid
+from .grid import GridPoint, make_grid, validate_grid
 from .matching import find_rank
 from .metrics import competitor_leaderboard, scan_coverage, scan_metrics
 
@@ -52,12 +53,16 @@ class SimulatedMapsFetcher:
         return None
 
 
+def uses_dataforseo() -> bool:
+    return os.environ.get("GEOGRID_FETCHER", "playwright").strip().lower() == "dataforseo"
+
+
 def make_fetcher() -> Fetcher:
     """GEOGRID_FETCHER=playwright (default, free) | dataforseo (needs DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD)."""
     from .fetchers.playwright_maps import PlaywrightMapsFetcher
     browser = PlaywrightMapsFetcher(headless=os.environ.get("GEOGRID_HEADLESS", "1") != "0",
                                     proxy=os.environ.get("GEOGRID_PROXY") or None)
-    if os.environ.get("GEOGRID_FETCHER", "playwright").lower() == "dataforseo":
+    if uses_dataforseo():
         from .fetchers.dataforseo import DataForSEOFetcher
         return DataForSEOFetcher(resolver=browser)  # browser only resolves businesses
     return browser
@@ -78,7 +83,13 @@ def create_scans(biz: dict, keywords: list[str], grid_size: int, spacing_km: flo
     return [db.create_scan(biz["id"], kw, grid_size, spacing_km, lat, lng) for kw in keywords]
 
 
-async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = None) -> None:
+async def run_scan(
+    scan_id: int,
+    fetcher: Fetcher,
+    concurrency: int | None = None,
+    *,
+    paid_fetch: Callable[[GridPoint, str], Awaitable[list[dict]]] | None = None,
+) -> None:
     scan = db.get_scan(scan_id, with_points=False)
     target = {
         "cid": scan["business_cid"],
@@ -97,7 +108,11 @@ async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = Non
             if abort.is_set():
                 return
             try:
-                results = await fetcher.fetch(scan["keyword"], point.lat, point.lng)
+                results = (
+                    await paid_fetch(point, scan["keyword"])
+                    if paid_fetch
+                    else await fetcher.fetch(scan["keyword"], point.lat, point.lng)
+                )
             except FetchStatusError as error:
                 log.warning(
                     "point %s,%s returned provider outcome=%s category=%s code=%s",
@@ -127,6 +142,8 @@ async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = Non
                         "rate_limit",
                         "duplicate_task_limit",
                         "budget_limit",
+                        "financial_authorization",
+                        "submission_uncertain",
                     } or consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                         abort.set()
                 else:
@@ -164,7 +181,10 @@ async def run_scan(scan_id: int, fetcher: Fetcher, concurrency: int | None = Non
             ok.append((rank, results))
 
     try:
-        await asyncio.gather(*(one(p) for p in grid))
+        outcomes = await asyncio.gather(*(one(p) for p in grid), return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException):
+                raise outcome
     except Exception as e:  # unexpected (DB etc.)
         db.finish_scan(scan_id, "failed", None, None, str(e)[:300])
         raise

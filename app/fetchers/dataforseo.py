@@ -4,6 +4,7 @@ Set DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD and GEOGRID_FETCHER=dataforseo.
 Business lookup (one request per new business) still uses the free Playwright resolver.
 """
 import os
+from decimal import Decimal, InvalidOperation
 
 import httpx
 
@@ -90,6 +91,7 @@ class DataForSEOFetcher:
         message: str | None,
         *,
         results: list[dict] | None = None,
+        cost_usd: Decimal | None = None,
     ) -> None:
         category = _ERROR_CATEGORIES.get(code, "technical_error")
         if code == 40102:
@@ -107,7 +109,34 @@ class DataForSEOFetcher:
             api_status_code=code,
             api_status_message=message,
             results=results,
+            cost_usd=cost_usd,
         )
+
+    @staticmethod
+    def _task_cost(payload: dict) -> Decimal | None:
+        tasks = payload.get("tasks")
+        if not isinstance(tasks, list) or len(tasks) != 1 or not isinstance(tasks[0], dict):
+            return None
+        value = tasks[0].get("cost")
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            cost = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not cost.is_finite() or cost < 0:
+            return None
+        total = payload.get("cost")
+        if total is not None:
+            if isinstance(total, bool):
+                return None
+            try:
+                total_cost = Decimal(str(total))
+            except (InvalidOperation, ValueError, TypeError):
+                return None
+            if not total_cost.is_finite() or total_cost != cost:
+                return None
+        return cost
 
     @staticmethod
     def _parse_items(task: dict) -> list[dict]:
@@ -136,6 +165,9 @@ class DataForSEOFetcher:
                 "reviews": rating.get("votes_count"),
                 "category": item.get("category"),
                 "address": item.get("address"),
+                "phone": item.get("phone"),
+                "url": item.get("url"),
+                "position": item.get("position"),
             })
         return out[:MAX_RESULTS]
 
@@ -150,7 +182,11 @@ class DataForSEOFetcher:
             provider_code = _status_code(payload.get("status_code"))
             provider_message = payload.get("status_message")
             if provider_code is not None:
-                cls._raise_status(provider_code, provider_message)
+                cls._raise_status(
+                    provider_code,
+                    provider_message,
+                    cost_usd=cls._task_cost(payload),
+                )
 
         category = {
             401: "authentication_error",
@@ -169,9 +205,18 @@ class DataForSEOFetcher:
             category=category,
             api_status_code=code,
             api_status_message=message,
+            cost_usd=cls._task_cost(payload) if isinstance(payload, dict) else None,
         )
 
     async def fetch(self, keyword: str, lat: float, lng: float) -> list[dict]:
+        raise FetchStatusError(
+            "DataForSEO Live requires a financial reservation",
+            category="financial_authorization",
+        )
+
+    async def _fetch_with_cost(
+        self, keyword: str, lat: float, lng: float
+    ) -> tuple[list[dict], Decimal | None]:
         body = [{"keyword": keyword, "location_coordinate": f"{lat},{lng},{self.zoom}z",
                  "language_code": self.lang, "depth": MAX_RESULTS}]
         try:
@@ -203,12 +248,17 @@ class DataForSEOFetcher:
         top_message = payload.get("status_message")
         if not isinstance(top_message, str):
             top_message = None
+        cost_usd = self._task_cost(payload)
         if top_code is not None and top_code != 20000:
-            self._raise_status(top_code, top_message)
+            self._raise_status(top_code, top_message, cost_usd=cost_usd)
 
         tasks = payload.get("tasks")
         if not isinstance(tasks, list) or not tasks or not isinstance(tasks[0], dict):
-            self._raise_status(top_code, top_message or "DataForSEO response did not contain a task")
+            self._raise_status(
+                top_code,
+                top_message or "DataForSEO response did not contain a task",
+                cost_usd=cost_usd,
+            )
 
         task = tasks[0]
         task_code = _status_code(task.get("status_code"))
@@ -224,8 +274,14 @@ class DataForSEOFetcher:
                     category="technical_error",
                     api_status_code=task_code,
                     api_status_message=task_message,
+                    cost_usd=cost_usd,
                 ) from error
-            self._raise_status(task_code, task_message, results=results)
+            self._raise_status(
+                task_code,
+                task_message,
+                results=results,
+                cost_usd=cost_usd,
+            )
 
         try:
             results = self._parse_items(task)
@@ -235,6 +291,7 @@ class DataForSEOFetcher:
                 category="technical_error",
                 api_status_code=task_code,
                 api_status_message=task_message,
+                cost_usd=cost_usd,
             ) from error
         if not results:
             raise FetchStatusError(
@@ -243,8 +300,9 @@ class DataForSEOFetcher:
                 category="no_results",
                 api_status_code=task_code,
                 api_status_message=task_message,
+                cost_usd=cost_usd,
             )
-        return results
+        return results, cost_usd
 
     async def resolve_business(self, query: str) -> dict:
         return await self._resolver.resolve_business(query)

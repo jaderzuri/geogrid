@@ -51,6 +51,42 @@ function makeCell(value) {
   return cell;
 }
 
+function makeContactCell(value, kind) {
+  const cell = document.createElement("td");
+  if (typeof value !== "string" || !value.trim()) {
+    cell.textContent = "Indisponível";
+    return cell;
+  }
+  let href = null;
+  if (kind === "phone") {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length >= 7 && digits.length <= 15) href = `tel:${digits}`;
+  } else {
+    try {
+      const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        href = parsed.href;
+      }
+    } catch {
+      href = null;
+    }
+  }
+  if (!href) {
+    cell.textContent = value;
+    return cell;
+  }
+  const link = document.createElement("a");
+  link.href = href;
+  link.textContent = value;
+  if (kind === "website") {
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+  }
+  cell.append(link);
+  return cell;
+}
+
 function renderTable(items) {
   const columns = activeKind === "leads"
     ? [
@@ -65,11 +101,16 @@ function renderTable(items) {
     ]
     : [
       ["Empresa candidata", "name"],
+      ["Telefone", "phone"],
+      ["Website", "website"],
+      ["CID", "cid"],
+      ["Place ID", "place_id"],
       ["Endereço", "address"],
       ["Categoria", "category"],
       ["Fonte", "source_provider"],
       ["Observações", "observation_count"],
-      ["Melhor posição", "best_rank"],
+      ["Melhor ordem de resultado em um ponto", "best_rank"],
+      ["Posições originais por ponto (JSON)", "provider_positions_by_point"],
       ["Cadastro", "record_status"],
       ["Qualificação", "qualification"],
       ["Exportável", "export_eligible"],
@@ -92,7 +133,11 @@ function renderTable(items) {
       if (key === "marketing_consent" || key === "export_eligible") {
         value = value ? "Sim" : "Não";
       }
-      row.append(makeCell(value));
+      row.append(
+        key === "phone" || key === "website"
+          ? makeContactCell(value, key)
+          : makeCell(value),
+      );
     }
     tableBody.append(row);
   }

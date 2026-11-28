@@ -1,4 +1,5 @@
 import concurrent.futures
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -524,3 +525,78 @@ def test_duplicate_dataforseo_task_id_cannot_be_assigned_to_two_points(api):
     )
     assert response.status_code == 409
     assert db.get_external_scan(CLIENT_ID, scan["scan_id"])["progress"] == 0
+
+
+def test_legacy_scan_route_fails_closed_for_dataforseo(api, monkeypatch):
+    business_id = db.upsert_business(
+        {
+            "name": "Legacy route security test",
+            "cid": "legacy-route-security-test",
+            "lat": -23.5505,
+            "lng": -46.6333,
+        }
+    )
+    monkeypatch.setenv("GEOGRID_FETCHER", "dataforseo")
+    monkeypatch.setenv("DATAFORSEO_LOGIN", "test-login")
+    monkeypatch.setenv("DATAFORSEO_PASSWORD", "test-password")
+    for approval in (
+        "ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED",
+        "ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED",
+        "ZURI_GOOGLE_UPSTREAM_USE_APPROVED",
+        "GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED",
+    ):
+        monkeypatch.setenv(approval, "true")
+
+    create_scans = Mock(
+        side_effect=AssertionError("The route must reject before creating a scan")
+    )
+    run_queued = AsyncMock(
+        side_effect=AssertionError("The route must reject before scheduling execution")
+    )
+    monkeypatch.setattr(main, "create_scans", create_scans)
+    monkeypatch.setattr(main, "_run_queued", run_queued)
+    request = {
+        "business_id": business_id,
+        "keywords": ["serviço local"],
+        "grid_size": 3,
+        "spacing_km": 1,
+    }
+
+    for headers in (
+        {},
+        {"Authorization": "Bearer invalid-token"},
+        {"Authorization": "Bearer test-external-token"},
+    ):
+        response = api.post("/api/scans", json=request, headers=headers)
+        assert response.status_code == 403
+
+    create_scans.assert_not_called()
+    run_queued.assert_not_called()
+    assert db.list_scans(business_id) == []
+
+
+def test_legacy_scan_route_keeps_free_playwright_flow(api, monkeypatch):
+    business_id = db.upsert_business(
+        {
+            "name": "Legacy route free-flow test",
+            "cid": "legacy-route-free-flow-test",
+            "lat": -23.5505,
+            "lng": -46.6333,
+        }
+    )
+    monkeypatch.setenv("GEOGRID_FETCHER", "playwright")
+
+    monkeypatch.setattr(main, "_run_queued", AsyncMock(return_value=None))
+    response = api.post(
+        "/api/scans",
+        json={
+            "business_id": business_id,
+            "keywords": ["serviço local"],
+            "grid_size": 3,
+            "spacing_km": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["scan_ids"]) == 1
+    assert len(db.list_scans(business_id)) == 1
