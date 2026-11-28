@@ -55,6 +55,7 @@ def _configure(monkeypatch, tmp_path):
     monkeypatch.setenv("ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED", "true")
     monkeypatch.setenv("ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED", "true")
     monkeypatch.setenv("ZURI_GOOGLE_UPSTREAM_USE_APPROVED", "true")
+    monkeypatch.setenv("GEOGRID_MAP_PROVIDER", "maptiler")
     monkeypatch.setenv("GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED", "true")
     monkeypatch.setenv("ZURI_LEADS_RATE_LIMIT", "1000")
     monkeypatch.setenv("ZURI_STATUS_RATE_LIMIT", "1000")

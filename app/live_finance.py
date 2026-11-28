@@ -931,3 +931,59 @@ class LiveScanExecutor:
             log.exception(
                 "live scan finalization failed; reservation remains held"
             )
+
+
+def financial_overview() -> dict:
+    """Read the current USD ledger and Live queue without changing reservations."""
+    try:
+        with _connect() as connection:
+            connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            control = connection.execute("""
+                SELECT enabled, daily_cap_usd, default_event_cap_usd, max_pending_tasks,
+                       estimated_task_cost_usd, estimated_live_task_cost_usd
+                FROM geogrid_budget WHERE scope_type = 'system' AND scope_key = 'default'
+            """).fetchone()
+            if not control:
+                raise LiveFinanceUnavailable("Financial controls are missing")
+            today = datetime.now(timezone.utc).date().isoformat()
+            rows = {
+                (row["scope_type"], row["scope_key"]): row
+                for row in connection.execute("""
+                    SELECT scope_type, scope_key, cap_amount_usd, reserved_amount_usd, spent_amount_usd
+                    FROM geogrid_budget WHERE (scope_type, scope_key) IN (('daily', %s), ('event', %s))
+                """, (today, _EVENT_KEY))
+            }
+            pools = {}
+            for name, key, cap_field in (
+                ("daily", today, "daily_cap_usd"),
+                ("manual_live", _EVENT_KEY, "default_event_cap_usd"),
+            ):
+                kind = "daily" if name == "daily" else "event"
+                row = rows.get((kind, key))
+                cap = control[cap_field]
+                if row:
+                    scope_cap = row["cap_amount_usd"]
+                    cap = min(cap, scope_cap) if cap is not None and scope_cap is not None else None
+                reserved = row["reserved_amount_usd"] if row else Decimal(0)
+                spent = row["spent_amount_usd"] if row else Decimal(0)
+                pools[name] = {
+                    "key": key, "limit_usd": cap, "reserved_usd": reserved, "spent_usd": spent,
+                    "available_usd": max(Decimal(0), cap - reserved - spent) if cap is not None else None,
+                }
+            scans = connection.execute("""
+                SELECT count(*) FILTER (WHERE status IN ('reserved','queued','running')) AS active,
+                       count(*) FILTER (WHERE status IN ('uncertain','cost_overrun')) AS held
+                FROM geogrid_live_scans
+                WHERE status IN ('reserved','queued','running','uncertain','cost_overrun')
+            """).fetchone()
+            queries = connection.execute("""
+                SELECT count(*) FILTER (WHERE q.state = 'authorized') AS authorized,
+                       count(*) FILTER (WHERE q.state = 'uncertain') AS uncertain
+                FROM geogrid_live_scans s
+                JOIN geogrid_live_scan_queries q USING (idempotency_key)
+                WHERE s.status IN ('reserved','queued','running','uncertain','cost_overrun')
+                  AND q.state IN ('authorized','uncertain')
+            """).fetchone()
+            return {"control": control, "balances": pools, "live_scans": scans, "live_queries": queries}
+    except psycopg.Error as error:
+        raise _translate_database_error(error) from error

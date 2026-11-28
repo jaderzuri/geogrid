@@ -31,6 +31,12 @@
     </section>
 
     <section id="admin-panel" hidden>
+      <details class="panel" id="finance-panel">
+        <summary>Controle financeiro</summary>
+        <button id="finance-refresh" type="button">Atualizar saldos</button>
+        <p id="finance-status" role="status"></p>
+        <dl id="finance-balances"></dl>
+      </details>
       <nav class="tabs" aria-label="Tipo de oportunidade">
         <button class="tab active" type="button" data-kind="leads">Leads diretos</button>
         <button class="tab" type="button" data-kind="prospects">Empresas candidatas</button>

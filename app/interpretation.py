@@ -230,9 +230,24 @@ def generate_full_interpretation(analysis: dict, keyword: str) -> dict:
     """
     metrics = analysis.get("metrics", {})
     ice = analysis.get("ice")
-    
+    score = analysis.get("ida_average")
+    ice_summary = generate_competition_interpretation(ice, keyword)
+    if score is not None and 0 <= score <= 100 and analysis.get("ida_evaluated_points", 0) > 0:
+        level = "fácil" if score < 35 else "intermediária" if score < 70 else "difícil"
+        competition = (
+            f"Dificuldade em '{keyword}': {level} (IDA {score:g}/100). "
+            f"Faixas operacionais do IDA. Cobertura: {analysis.get('ida_coverage_pct', 0):g}% dos pontos válidos."
+        )
+        if isinstance(ice, dict) and ice.get("level") in {"muito_alta", "alta", "moderada", "baixa"}:
+            competition += f" {ice_summary}"
+    else:
+        competition = (
+            "Dificuldade indeterminada: nenhum ponto possui dados suficientes para calcular o IDA. "
+            f"{ice_summary}"
+        )
+
     return {
         "coverage": generate_coverage_interpretation(metrics),
         "positioning": generate_positioning_interpretation(metrics, keyword),
-        "competition": generate_competition_interpretation(ice, keyword),
+        "competition": competition,
     }

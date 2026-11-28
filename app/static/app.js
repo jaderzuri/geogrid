@@ -145,15 +145,53 @@ function cardPadding() {
   const right = comp && comp.width < mapBox.width / 2 ? mapBox.right - comp.left + 20 : 40;
   return { topLeft: [40, top], bottomRight: [right, 50] };
 }
+const mapProvider = document.querySelector('meta[name="map-provider"]').content;
+const mapStatus = $("#mapTileStatus");
+let mapReady = false;
+let mapFailed = false;
+function updateMapStatus(ready, message = "") {
+  mapReady = ready && !mapFailed;
+  mapStatus.textContent = message;
+  mapStatus.classList.toggle("hidden", mapReady);
+}
+function failMap(message) {
+  mapFailed = true;
+  updateMapStatus(false, message);
+}
 const maptilerKey = document.querySelector('meta[name="maptiler-api-key"]')?.content.trim();
-if (maptilerKey) {
+if (mapProvider === "openfreemap" && L.maplibreGL) {
+  try {
+    const tiles = L.maplibreGL({
+      style: document.querySelector('meta[name="map-style-url"]').content,
+      attribution: '<a href="https://openfreemap.org/">OpenFreeMap</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a> · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+      preserveDrawingBuffer: true,
+    }).addTo(map).getMaplibreMap();
+    tiles.on("error", () => failMap("Falha ao carregar o mapa OpenFreeMap. Recarregue a página para tentar novamente."));
+    tiles.on("idle", () => {
+      if (!mapFailed && tiles.isStyleLoaded() && tiles.areTilesLoaded()) updateMapStatus(true);
+    });
+    tiles.on("movestart", () => {
+      if (!mapFailed) updateMapStatus(false, "Carregando mapa…");
+    });
+    updateMapStatus(false, "Carregando mapa…");
+  } catch {
+    failMap("OpenFreeMap indisponível neste navegador.");
+  }
+} else if (mapProvider === "maptiler" && maptilerKey) {
   const tileUrl = `https://api.maptiler.com/maps/streets-v4/{z}/{x}/{y}.png?key=${encodeURIComponent(maptilerKey)}`;
-  L.tileLayer(tileUrl, {
+  const layer = L.tileLayer(tileUrl, {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
   }).addTo(map);
+  layer?.on?.("loading", () => {
+    if (!mapFailed) updateMapStatus(false, "Carregando mapa…");
+  });
+  layer?.on?.("load", () => { if (!mapFailed) updateMapStatus(true); });
+  layer?.on?.("tileerror", () => failMap("Falha ao carregar o mapa MapTiler."));
 } else {
-  $("#mapTileStatus").classList.remove("hidden");
+  failMap(mapProvider === "maptiler"
+    ? "Configure GEOGRID_MAPTILER_API_KEY para carregar o mapa."
+    : "Mapa indisponível. Verifique a configuração e a disponibilidade do fornecedor.");
 }
 const gridLayer = L.layerGroup().addTo(map);
 let centerMarker = null, bizMarker = null;
@@ -259,7 +297,7 @@ const targetKey = () => S.competitor || myKey();
 async function loadBusinesses(selectId) {
   S.businesses = await api("/api/businesses");
   const sel = $("#bizSelect");
-  sel.innerHTML = `<option value="">— add a business below —</option>` +
+  sel.innerHTML = `<option value="">— cadastre uma empresa abaixo —</option>` +
     S.businesses.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join("");
   const id = selectId ?? localGet("bizId");
   if (id && S.businesses.some((b) => b.id == id)) { sel.value = id; await selectBusiness(+id); }
@@ -291,7 +329,7 @@ $("#bizForm").addEventListener("submit", async (e) => {
   const q = $("#bizQuery").value.trim();
   if (!q) return;
   const btn = e.submitter; btn.disabled = true;
-  say("#bizMsg", "muted", "Looking it up on Google Maps…");
+  say("#bizMsg", "muted", "Buscando no Google Maps…");
   try {
     const b = await api("/api/businesses", { method: "POST", body: JSON.stringify({ query: q }) });
     say("#bizMsg", "ok", `Added: ${b.name}`);
@@ -316,9 +354,8 @@ $("#resetCenter").addEventListener("click", (e) => { e.preventDefault(); if (S.b
 
 function updateHint() {
   const n = +$("#gridSize").value, km = spacingKm(), span = (n - 1) * km;
-  const kws = keywords().length || 1;
-  const mins = Math.ceil((n * n * kws * 7) / 2 / 60);
-  $("#gridHint").textContent = `${n * n} points × ${kws} keyword${kws > 1 ? "s" : ""} · covers ${span.toFixed(1)} × ${span.toFixed(1)} km · ~${mins} min`;
+  const kws = keywords().length;
+  $("#gridHint").textContent = `${n * n} pontos × ${kws} palavra(s)-chave · ${n * n * kws} consultas · ${span.toFixed(1)} × ${span.toFixed(1)} km`;
 }
 function drawPreview() {
   updateHint();
@@ -341,6 +378,13 @@ function fitGrid(forPrint = false) {
   const pad = forPrint
     ? { topLeft: [24, 24], bottomRight: [24, 24] }
     : cardPadding();
+  const historical = forPrint ? S.scan?.points || [] : [];
+  if (historical.length === n * n && historical.every((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
+    map.fitBounds(historical.map((point) => [point.lat, point.lng]), {
+      paddingTopLeft: pad.topLeft, paddingBottomRight: pad.bottomRight,
+    });
+    return;
+  }
   map.fitBounds([offset(c[0], c[1], -h, -h), offset(c[0], c[1], h, h)], { paddingTopLeft: pad.topLeft, paddingBottomRight: pad.bottomRight });
 }
 ["#gridSize", "#spacing", "#unit"].forEach((s) => $(s).addEventListener("input", () => { showPreview(); fitGrid(); }));
@@ -357,7 +401,7 @@ const liveRetryStorage = "geogrid-manual-live-request";
 $("#runBtn").addEventListener("click", async () => {
   const kws = keywords();
   if (!S.business) return;
-  if (!kws.length) { say("#runMsg", "err", "Enter at least one keyword."); return; }
+  if (!kws.length) { say("#runMsg", "err", "Informe pelo menos uma palavra-chave."); return; }
   $("#runBtn").disabled = true; $("#runMsg").textContent = "";
   try {
     const body = JSON.stringify({
@@ -383,7 +427,7 @@ $("#runBtn").addEventListener("click", async () => {
       return;
     }
     if (manualLive) sessionStorage.removeItem(liveRetryStorage);
-    say("#runMsg", "ok", `Started ${scan_ids.length} scan${scan_ids.length > 1 ? "s" : ""}.`);
+    say("#runMsg", "ok", `Pesquisas iniciadas: ${scan_ids.length}.`);
     await loadHistory();
     await openScan(scan_ids[0]);
   } catch (err) {
@@ -403,7 +447,7 @@ async function loadHistory() {
 
 function renderHistoryList() {
   const ul = $("#history");
-  if (!S.scans.length) { ul.innerHTML = '<li class="muted small">No scans yet.</li>'; return; }
+  if (!S.scans.length) { ul.innerHTML = '<li class="muted small">Nenhuma pesquisa.</li>'; return; }
   ul.innerHTML = S.scans.map((s) => {
     const m = s.metrics || {};
     const validPoints = m.valid_points ?? m.points ?? 0;
@@ -588,6 +632,16 @@ function renderCoverage() {
     `falhos: ${summary.failed} · pendentes: ${summary.pending}. ` +
     `<span class="muted">Classificação operacional, não representa probabilidade ou confiança estatística.</span>`;
 }
+
+$("#analysisMode").addEventListener("change", (event) => {
+  document.body.classList.toggle("analysis-basic", event.target.value === "basic");
+  if (S.scan && event.target.value === "basic") {
+    S.mode = "rank";
+    renderScan(false);
+  }
+  map.invalidateSize({ pan: false });
+  fitGrid();
+});
 
 function renderMetrics() {
   const s = S.scan;
@@ -783,7 +837,7 @@ function popupHtml(p, key) {
   const items = p.results.map((r) => `<li class="${sameBiz(r, key) ? "hit" : ""}">${esc(r.name)}${r.rating ? ` <span class="muted">★${r.rating}</span>` : ""}</li>`).join("");
   const rankText = rank == null ? "20+ (consulta válida; empresa fora do ranking)" : `#${rank}`;
   return `<div class="popup"><h4>${esc(key.name)}: ${rankText}</h4>
-    <div class="muted">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>${difficultyText ? `<div>${difficultyText}</div>` : ""}${opportunityText}<ol>${items || "<li class='muted'>No results</li>"}</ol></div>`;
+    <div class="muted">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>${difficultyText ? `<div>${difficultyText}</div>` : ""}${opportunityText}<ol>${items || "<li class='muted'>Sem resultados</li>"}</ol></div>`;
 }
 
 document.querySelectorAll("#viewToggle button").forEach((b) => b.addEventListener("click", () => {
@@ -804,9 +858,20 @@ window.addEventListener("afterprint", () => {
   map.invalidateSize({ pan: false });
   fitGrid();
 });
-$("#printBtn").addEventListener("click", () => window.print());
+const printFormat = document.createElement("style");
+document.head.append(printFormat);
+$("#printBtn").addEventListener("click", async () => {
+  if (!mapReady) {
+    updateMapStatus(false, mapStatus.textContent || "Aguarde o carregamento completo do mapa para salvar o PDF.");
+    return;
+  }
+  const landscape = $("#printOrientation").value === "landscape";
+  printFormat.textContent = `@media print { @page { size: A4 ${landscape ? "landscape" : "portrait"}; } }`;
+  if (document.fonts) await document.fonts.ready;
+  if (mapReady) window.print();
+});
 $("#deleteBtn").addEventListener("click", async () => {
-  if (!S.scan || !confirm(`Delete scan “${S.scan.keyword}” from ${when(S.scan.created)}?`)) return;
+  if (!S.scan || !confirm(`Excluir a pesquisa “${S.scan.keyword}” de ${when(S.scan.created)}?`)) return;
   try { await api(`/api/scans/${S.scan.id}`, { method: "DELETE" }); }
   catch (err) { alert(err.message); return; }
   closeScan(); await loadHistory(); drawPreview();

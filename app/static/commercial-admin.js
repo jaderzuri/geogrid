@@ -219,3 +219,51 @@ queryInput.addEventListener("keydown", (event) => {
 requestJson("/api/commercial/admin/session")
   .then((result) => setAuthenticated(result.operator_id))
   .catch(() => setAuthenticated(""));
+
+const financePanel = document.getElementById("finance-panel");
+const financeStatus = document.getElementById("finance-status");
+const financeBalances = document.getElementById("finance-balances");
+
+async function loadFinance() {
+  financeBalances.replaceChildren();
+  financeStatus.textContent = "Carregando saldos…";
+  try {
+    const data = await requestJson("/api/commercial/admin/finance");
+    if (adminPanel.hidden || !financePanel.open) return;
+    const amount = (value) => value == null ? "indisponível" : new Intl.NumberFormat("pt-BR", {
+      style: "currency", currency: "USD", maximumFractionDigits: 6,
+    }).format(value);
+    const rows = [
+      ["Limite de tarefas Standard pendentes", data.control.max_pending_tasks ?? "indisponível"],
+      ["Lotes Live ativos", data.live_scans.active],
+      ["Lotes Live aguardando reconciliação", data.live_scans.held],
+      ["Consultas Live autorizadas", data.live_queries.authorized],
+      ["Consultas Live incertas", data.live_queries.uncertain],
+    ];
+    for (const [key, name] of [["daily", "Dia UTC"], ["manual_live", "Evento manual Live"]]) {
+      const pool = data.balances[key];
+      for (const [field, label] of [
+        ["limit_usd", "limite"], ["available_usd", "disponível"],
+        ["reserved_usd", "reservado"], ["spent_usd", "consumido"],
+      ]) rows.push([`${name} · ${label}`, amount(pool[field])]);
+    }
+    for (const [label, value] of rows) {
+      const title = document.createElement("dt");
+      const definition = document.createElement("dd");
+      title.textContent = label;
+      definition.textContent = value;
+      financeBalances.append(title, definition);
+    }
+    financeStatus.textContent = data.control.enabled ? "Ledger habilitado" : "Ledger desabilitado";
+  } catch (error) {
+    financeStatus.textContent = error.message;
+  }
+}
+
+financePanel.addEventListener("toggle", () => { if (financePanel.open) loadFinance(); });
+document.getElementById("finance-refresh").addEventListener("click", loadFinance);
+logoutButton.addEventListener("click", () => {
+  financePanel.open = false;
+  financeBalances.replaceChildren();
+  financeStatus.textContent = "";
+});

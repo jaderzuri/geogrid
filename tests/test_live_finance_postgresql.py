@@ -144,7 +144,7 @@ def test_operator_route_reserves_before_provider_and_replays(ledger, tmp_path, m
     for setting in (
         "GEOGRID_MANUAL_LIVE_ENABLED", "ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED",
         "ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED", "ZURI_GOOGLE_UPSTREAM_USE_APPROVED",
-        "GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED",
+        "GEOGRID_MAP_PROVIDER_COMMERCIAL_USE_APPROVED",
     ):
         monkeypatch.setenv(setting, "true")
     monkeypatch.setenv("GEOGRID_FETCHER", " DataForSEO ")
