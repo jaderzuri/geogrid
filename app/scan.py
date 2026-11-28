@@ -53,12 +53,16 @@ class SimulatedMapsFetcher:
         return None
 
 
+def uses_dataforseo() -> bool:
+    return os.environ.get("GEOGRID_FETCHER", "playwright").strip().lower() == "dataforseo"
+
+
 def make_fetcher() -> Fetcher:
     """GEOGRID_FETCHER=playwright (default, free) | dataforseo (needs DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD)."""
     from .fetchers.playwright_maps import PlaywrightMapsFetcher
     browser = PlaywrightMapsFetcher(headless=os.environ.get("GEOGRID_HEADLESS", "1") != "0",
                                     proxy=os.environ.get("GEOGRID_PROXY") or None)
-    if os.environ.get("GEOGRID_FETCHER", "playwright").lower() == "dataforseo":
+    if uses_dataforseo():
         from .fetchers.dataforseo import DataForSEOFetcher
         return DataForSEOFetcher(resolver=browser)  # browser only resolves businesses
     return browser
@@ -177,7 +181,10 @@ async def run_scan(
             ok.append((rank, results))
 
     try:
-        await asyncio.gather(*(one(p) for p in grid))
+        outcomes = await asyncio.gather(*(one(p) for p in grid), return_exceptions=True)
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException):
+                raise outcome
     except Exception as e:  # unexpected (DB etc.)
         db.finish_scan(scan_id, "failed", None, None, str(e)[:300])
         raise

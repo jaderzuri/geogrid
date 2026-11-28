@@ -209,10 +209,12 @@ class DataForSEOFetcher:
         )
 
     async def fetch(self, keyword: str, lat: float, lng: float) -> list[dict]:
-        results, _ = await self.fetch_with_cost(keyword, lat, lng)
-        return results
+        raise FetchStatusError(
+            "DataForSEO Live requires a financial reservation",
+            category="financial_authorization",
+        )
 
-    async def fetch_with_cost(
+    async def _fetch_with_cost(
         self, keyword: str, lat: float, lng: float
     ) -> tuple[list[dict], Decimal | None]:
         body = [{"keyword": keyword, "location_coordinate": f"{lat},{lng},{self.zoom}z",

@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 import psycopg
 from psycopg.rows import dict_row
@@ -54,7 +54,7 @@ class LiveReservation:
 
 @runtime_checkable
 class CostAwareFetcher(Protocol):
-    async def fetch_with_cost(
+    async def _fetch_with_cost(
         self, keyword: str, lat: float, lng: float
     ) -> tuple[list[dict], Decimal | None]: ...
 
@@ -101,7 +101,12 @@ def _connect():
     if not dsn:
         raise LiveFinanceUnavailable("PostgreSQL finance connection is not configured")
     try:
-        return psycopg.connect(dsn, connect_timeout=3, row_factory=dict_row)
+        return psycopg.connect(
+            dsn,
+            connect_timeout=3,
+            options="-c lock_timeout=5000 -c statement_timeout=10000",
+            row_factory=dict_row,
+        )
     except psycopg.Error as error:
         raise LiveFinanceUnavailable("PostgreSQL finance ledger is unavailable") from error
 
@@ -225,6 +230,17 @@ def reserve_live_scan(
                     "Live pricing or global financial controls are not configured"
                 )
 
+            active = connection.execute(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM geogrid_live_scans
+                    WHERE status IN ('reserved', 'queued', 'running', 'uncertain', 'cost_overrun')
+                ) AS present
+                """
+            ).fetchone()["present"]
+            if active:
+                raise LiveBudgetDenied("An active Live scan must finish or be reconciled")
+
             unit_cost = control["estimated_live_task_cost_usd"]
             reserved = _decimal(unit_cost * total_queries, allow_zero=False)
             daily_key = datetime.now(timezone.utc).date().isoformat()
@@ -257,11 +273,11 @@ def reserve_live_scan(
                 or daily["spent_amount_usd"]
                 + daily["reserved_amount_usd"]
                 + reserved
-                > daily["cap_amount_usd"]
+                > min(daily["cap_amount_usd"], control["daily_cap_usd"])
                 or event["spent_amount_usd"]
                 + event["reserved_amount_usd"]
                 + reserved
-                > event["cap_amount_usd"]
+                > min(event["cap_amount_usd"], control["default_event_cap_usd"])
             ):
                 raise LiveBudgetDenied(
                     "Daily or operation budget is insufficient for this scan"
@@ -384,7 +400,7 @@ def authorize_live_query(
             _lock_shared_ledger(connection)
             control = connection.execute(
                 """
-                SELECT enabled, estimated_live_task_cost_usd
+                SELECT enabled, estimated_live_task_cost_usd, daily_cap_usd, default_event_cap_usd
                 FROM geogrid_budget
                 WHERE scope_type = 'system' AND scope_key = 'default'
                 FOR UPDATE
@@ -394,7 +410,10 @@ def authorize_live_query(
             if (
                 not control
                 or not control["enabled"]
+                or control["daily_cap_usd"] is None
+                or control["default_event_cap_usd"] is None
                 or not request
+                or request["budget_daily_key"] != datetime.now(timezone.utc).date().isoformat()
                 or request["claim_token"] != claim_token
                 or request["operator_id"] != operator_id
                 or request["status"] not in {"queued", "running"}
@@ -422,9 +441,9 @@ def authorize_live_query(
                 or daily["cap_amount_usd"] is None
                 or event["cap_amount_usd"] is None
                 or daily["spent_amount_usd"] + daily["reserved_amount_usd"]
-                > daily["cap_amount_usd"]
+                > min(daily["cap_amount_usd"], control["daily_cap_usd"])
                 or event["spent_amount_usd"] + event["reserved_amount_usd"]
-                > event["cap_amount_usd"]
+                > min(event["cap_amount_usd"], control["default_event_cap_usd"])
             ):
                 return False
 
@@ -604,7 +623,8 @@ def mark_live_query_uncertain(
             connection.execute(
                 """
                 UPDATE geogrid_live_scans
-                SET status = 'uncertain', updated_at = now()
+                SET status = CASE WHEN status = 'cost_overrun' THEN status ELSE 'uncertain' END,
+                    updated_at = now()
                 WHERE idempotency_key = %s
                 """,
                 (idempotency_key,),
@@ -783,16 +803,17 @@ class LiveScanExecutor:
     claim_token: uuid.UUID
     operator_id: str
     scan_ids: list[int]
+    max_in_flight: ClassVar[int] = _MAX_IN_FLIGHT
 
     async def fetch_point(
         self,
         fetcher: object,
+        point: GridPoint,
+        keyword: str,
         *,
         scan_index: int,
         scan_id: int,
-        point: GridPoint,
         grid_size: int,
-        keyword: str,
     ) -> list[dict]:
         if not isinstance(fetcher, CostAwareFetcher):
             raise FetchStatusError(
@@ -822,7 +843,7 @@ class LiveScanExecutor:
             )
 
         try:
-            results, actual_cost = await fetcher.fetch_with_cost(
+            results, actual_cost = await fetcher._fetch_with_cost(
                 keyword, point.lat, point.lng
             )
         except FetchStatusError as error:
@@ -870,7 +891,7 @@ class LiveScanExecutor:
             )
             if not recorded:
                 raise LiveFinanceUnavailable("Provider cost could not be committed")
-        except LiveFinanceError as error:
+        except (LiveFinanceError, InvalidOperation, ValueError) as error:
             await self._mark_uncertain(scan_index, point_index, error)
             raise FetchStatusError(
                 "Provider outcome was received but its cost could not be reconciled; "

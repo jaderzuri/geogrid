@@ -11,7 +11,7 @@ import sys
 
 from . import db
 from .grid import parse_distance_km
-from .scan import create_scans, make_fetcher, run_scan
+from .scan import create_scans, make_fetcher, run_scan, uses_dataforseo
 
 
 def print_grid(scan: dict) -> None:
@@ -49,6 +49,9 @@ def print_summary(scan: dict) -> None:
 
 
 async def cmd_scan(args) -> int:
+    if uses_dataforseo():
+        print("Manual DataForSEO Live requires the operator web session", file=sys.stderr)
+        return 2
     fetcher = make_fetcher()
     try:
         if args.business_id:

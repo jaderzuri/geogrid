@@ -14,9 +14,11 @@ import logging
 
 from contextlib import asynccontextmanager
 from html import escape
+from functools import partial
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -32,12 +34,27 @@ from .competitive_metrics import (
 from .interpretation import generate_full_interpretation
 from .fetchers.base import FetchError
 from .business_finder import router as business_finder_router
+from .commercial import landing_diagnostics_gate
+from .commercial_api import _require_admin_session, _require_secure_admin_request
 from .commercial_api import router as commercial_router
 from .commercial_api import wordpress_router
 from .external_api import ExternalRequestSizeLimitMiddleware, router as external_router
+from .grid import validate_grid
+from .landing import _check_origin
 from .landing import router as landing_router
+from .live_finance import (
+    LiveBudgetDenied,
+    LiveFinanceError,
+    LiveFinanceUnavailable,
+    LiveIdempotencyConflict,
+    LiveScanExecutor,
+    attach_live_scan_ids,
+    finish_live_scan,
+    reserve_live_scan,
+    scan_fingerprint,
+)
 from .metrics import point_difficulty, scan_coverage, scan_metrics
-from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan
+from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan, uses_dataforseo
 from .utils.qrcode import generate_qrcode_svg_data_url
 
 
@@ -189,6 +206,9 @@ def index():
         generate_qrcode_svg_data_url(BRANDING.whatsapp_link)
     )
     page = page.replace("__GEOGRID_MAPTILER_API_KEY__", api_key)
+    page = page.replace("__GEOGRID_MANUAL_SCAN_URL__", (
+        "/api/commercial/admin/live-scans" if uses_dataforseo() else "/api/scans"
+    ))
     page = page.replace("__ZURI_PRINT_INTRO__", print_intro)
     page = page.replace("__ZURI_PRINT_CLOSING__", print_closing)
     return HTMLResponse(page)
@@ -278,17 +298,7 @@ async def _run_queued(
                     if simulated
                     else fetcher()
                 )
-                provider_id = (
-                    "simulator"
-                    if simulated
-                    else (
-                        "dataforseo_live"
-                        if os.environ.get("GEOGRID_FETCHER", "").strip().lower()
-                        == "dataforseo"
-                        else "playwright"
-                    )
-                )
-                db.set_scan_result_provider(scan_id, provider_id)
+                db.set_scan_result_provider(scan_id, "simulator" if simulated else "playwright")
                 await run_scan(
                     scan_id,
                     scan_fetcher,
@@ -317,7 +327,7 @@ async def start_scans(
 ):
     """Create and queue GeoGrid scans."""
 
-    if os.environ.get("GEOGRID_FETCHER", "playwright").lower() == "dataforseo":
+    if uses_dataforseo():
         raise HTTPException(
             status_code=403,
             detail=(
@@ -367,6 +377,122 @@ async def start_scans(
     return {
         "scan_ids": scan_ids,
     }
+
+
+async def _run_live_batch(executor: LiveScanExecutor) -> None:
+    try:
+        provider = fetcher()
+        for index, scan_id in enumerate(executor.scan_ids):
+            scan = db.get_scan(scan_id, with_points=False)
+            if not scan or scan["status"] != "running" or scan["progress"]:
+                raise RuntimeError("Live scan cannot be safely started")
+            await run_scan(
+                scan_id,
+                provider,
+                concurrency=executor.max_in_flight,
+                paid_fetch=partial(
+                    executor.fetch_point,
+                    provider,
+                    scan_index=index,
+                    scan_id=scan_id,
+                    grid_size=scan["grid_size"],
+                ),
+            )
+            if db.get_scan(scan_id, with_points=False)["status"] == "failed":
+                break
+    finally:
+        await executor.finish()
+        for scan_id in executor.scan_ids:
+            scan = db.get_scan(scan_id, with_points=False)
+            if scan and scan["status"] == "running":
+                db.finish_scan(scan_id, "failed", None, None, "Live batch interrupted")
+
+
+@app.post("/api/commercial/admin/live-scans", status_code=202)
+def start_live_scans(
+    body: ScanIn,
+    request: Request,
+    background: BackgroundTasks,
+    idempotency_key: UUID = Header(),
+):
+    _check_origin(request)
+    _require_secure_admin_request(request)
+    operator = _require_admin_session(request)
+    if (
+        not uses_dataforseo()
+        or os.environ.get("GEOGRID_MANUAL_LIVE_ENABLED") != "true"
+        or not landing_diagnostics_gate()["enabled"]
+    ):
+        raise HTTPException(status_code=503, detail="Manual Live is disabled")
+    if not all(os.environ.get(key, "").strip() for key in ("DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD")):
+        raise HTTPException(status_code=503, detail="Live provider credentials are unavailable")
+
+    business = db.get_business(body.business_id)
+    if not business:
+        raise HTTPException(status_code=404, detail="business not found")
+    keywords = [keyword.strip() for keyword in body.keywords if keyword.strip()]
+    lat = business["lat"] if body.center_lat is None else body.center_lat
+    lng = business["lng"] if body.center_lng is None else body.center_lng
+    if (
+        not keywords
+        or len(set(keywords)) != len(keywords)
+        or any(len(keyword) > 255 for keyword in keywords)
+        or not (-90 < lat < 90 and -180 <= lng <= 180)
+        or (body.center_lat is None) != (body.center_lng is None)
+    ):
+        raise HTTPException(status_code=422, detail="Invalid Live scan parameters")
+    try:
+        validate_grid(body.grid_size, body.spacing_km)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    fingerprint = scan_fingerprint(
+        operator_id=operator,
+        business_id=body.business_id,
+        keywords=keywords,
+        grid_size=body.grid_size,
+        spacing_km=body.spacing_km,
+        center=(lat, lng),
+    )
+    try:
+        reservation = reserve_live_scan(
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            operator_id=operator,
+            business_id=body.business_id,
+            grid_size=body.grid_size,
+            keyword_count=len(keywords),
+        )
+    except (LiveBudgetDenied, LiveIdempotencyConflict) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except LiveFinanceError as error:
+        raise HTTPException(status_code=503, detail="Live finance unavailable") from error
+    if not reservation.created:
+        return {"scan_ids": reservation.scan_ids or [], "status": reservation.status}
+
+    scan_ids = []
+    try:
+        for keyword in keywords:
+            scan_id = db.create_scan(body.business_id, keyword, body.grid_size, body.spacing_km, lat, lng)
+            scan_ids.append(scan_id)
+            db.set_scan_result_provider(scan_id, "dataforseo_live")
+        if not attach_live_scan_ids(idempotency_key, reservation.claim_token, scan_ids):
+            raise LiveFinanceUnavailable("Unable to attach reserved scan IDs")
+        background.add_task(
+            _run_live_batch,
+            LiveScanExecutor(idempotency_key, reservation.claim_token, operator, scan_ids),
+        )
+    except Exception as error:
+        log.exception("Live scan could not be queued")
+        try:
+            finish_live_scan(idempotency_key)
+        except LiveFinanceError:
+            log.exception("Live reservation remains held")
+        for scan_id in scan_ids:
+            db.finish_scan(scan_id, "failed", None, None, "Live scan could not be queued")
+        raise HTTPException(status_code=503, detail="Live scan could not be queued") from error
+
+    return {"scan_ids": scan_ids, "status": "queued"}
 
 
 # --------------------------------------------------

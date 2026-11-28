@@ -162,7 +162,11 @@ let centerMarker = null, bizMarker = null;
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+  if (!res.ok) {
+    const error = new Error(body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : res.statusText);
+    error.status = res.status;
+    throw error;
+  }
   return body;
 }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -345,20 +349,47 @@ $("#keywords").addEventListener("input", updateHint);
 // ---------- run ----------
 function keywords() { return $("#keywords").value.split("\n").map((k) => k.trim()).filter(Boolean); }
 
+const scanUrl = $('meta[name="manual-scan-url"]').content;
+const manualLive = scanUrl === "/api/commercial/admin/live-scans";
+$("#liveLogin").hidden = !manualLive;
+const liveRetryStorage = "geogrid-manual-live-request";
+
 $("#runBtn").addEventListener("click", async () => {
   const kws = keywords();
   if (!S.business) return;
   if (!kws.length) { say("#runMsg", "err", "Enter at least one keyword."); return; }
   $("#runBtn").disabled = true; $("#runMsg").textContent = "";
   try {
-    const { scan_ids } = await api("/api/scans", { method: "POST", body: JSON.stringify({
+    const body = JSON.stringify({
       business_id: S.business.id, keywords: kws, grid_size: +$("#gridSize").value,
       spacing_km: +spacingKm().toFixed(4), center_lat: S.center[0], center_lng: S.center[1],
-    }) });
+    });
+    const headers = { "Content-Type": "application/json" };
+    if (manualLive) {
+      const previous = JSON.parse(sessionStorage.getItem(liveRetryStorage) || "null");
+      if (previous && previous.body !== body) {
+        throw new Error("Há um pedido Live pendente. Reenvie os mesmos parâmetros para recuperar o status.");
+      }
+      const pending = previous || { body, key: crypto.randomUUID() };
+      sessionStorage.setItem(liveRetryStorage, JSON.stringify(pending));
+      headers["Idempotency-Key"] = pending.key;
+    }
+    const { scan_ids, status } = await api(scanUrl, { method: "POST", headers, body });
+    if (!scan_ids.length) {
+      if (status === "failed" || status === "released") {
+        sessionStorage.removeItem(liveRetryStorage);
+      }
+      say("#runMsg", "err", `Pedido Live com status ${status}.`);
+      return;
+    }
+    if (manualLive) sessionStorage.removeItem(liveRetryStorage);
     say("#runMsg", "ok", `Started ${scan_ids.length} scan${scan_ids.length > 1 ? "s" : ""}.`);
     await loadHistory();
     await openScan(scan_ids[0]);
   } catch (err) {
+    if (manualLive && [409, 422].includes(err.status)) {
+      sessionStorage.removeItem(liveRetryStorage);
+    }
     say("#runMsg", "err", err.message);
   } finally { $("#runBtn").disabled = false; }
 });

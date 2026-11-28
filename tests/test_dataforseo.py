@@ -53,7 +53,7 @@ def test_fetch_uses_configurable_language_and_live_endpoint(monkeypatch, configu
 
     async def run():
         fetcher = DataForSEOFetcher(Resolver())
-        results = await fetcher.fetch("encanador", -23.5, -46.6)
+        results, _ = await fetcher._fetch_with_cost("encanador", -23.5, -46.6)
         await fetcher.close()
         return results
 
@@ -111,7 +111,7 @@ def test_fetch_classifies_provider_codes_without_losing_original_status(
     async def run():
         fetcher = DataForSEOFetcher(Resolver(), login="private-login", password="private-password")
         try:
-            await fetcher.fetch("encanador", -23.5, -46.6)
+            await fetcher._fetch_with_cost("encanador", -23.5, -46.6)
         finally:
             await fetcher.close()
 
@@ -152,7 +152,7 @@ def test_http_errors_are_classified_without_storing_auth_data(monkeypatch, http_
     async def run():
         fetcher = DataForSEOFetcher(Resolver(), login="private-login", password="private-password")
         try:
-            await fetcher.fetch("encanador", -23.5, -46.6)
+            await fetcher._fetch_with_cost("encanador", -23.5, -46.6)
         finally:
             await fetcher.close()
 
@@ -175,7 +175,7 @@ def test_empty_organic_results_are_not_reported_as_rank_20_plus(monkeypatch):
     async def run():
         fetcher = DataForSEOFetcher(Resolver(), login="test-login", password="test-password")
         try:
-            await fetcher.fetch("encanador", -23.5, -46.6)
+            await fetcher._fetch_with_cost("encanador", -23.5, -46.6)
         finally:
             await fetcher.close()
 
@@ -221,7 +221,7 @@ def test_additional_contact_fields_are_captured_when_available(monkeypatch):
     async def run():
         fetcher = DataForSEOFetcher(Resolver(), login="test-login", password="test-password")
         try:
-            results = await fetcher.fetch("restaurante", -23.5, -46.6)
+            results, _ = await fetcher._fetch_with_cost("restaurante", -23.5, -46.6)
             return results
         finally:
             await fetcher.close()

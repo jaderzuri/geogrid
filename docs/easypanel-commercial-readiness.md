@@ -172,3 +172,58 @@ não reenviar; fazer reconciliação manual pelos IDs persistidos.
   WordPress externo não bloqueia a landing nativa.
 - Testes extensivos de carga não foram repetidos. A capacidade configurada em
   ambiente isolado não deve ser presumida para o Easypanel compartilhado.
+
+## P5.10 — pesquisa manual DataForSEO Live
+
+1. Após aprovação da publicação, mantenha `GEOGRID_MANUAL_LIVE_ENABLED=false`.
+   Preserve o volume SQLite existente e tenha backup verificável dos dois
+   bancos. No PostgreSQL da fila, já migrado até `008`, aplique
+   `migrations/postgresql/009-live-scan-budget.sql` com
+   `psql -v ON_ERROR_STOP=1 -f migrations/postgresql/009-live-scan-budget.sql`.
+   A migração adiciona duas tabelas e uma coluna opcional ao ledger.
+2. Em `GEOGRID_FINANCE_DATABASE_URL`, configure a conexão privada do backend ao
+   mesmo PostgreSQL usado pelo Standard. A role de runtime precisa de
+   `SELECT`, `INSERT` e `UPDATE` em `geogrid_budget`,
+   `geogrid_live_scans` e `geogrid_live_scan_queries`. Use uma role separada
+   para a migração. Mantenha `GEOGRID_COMMERCE_OPERATOR_TOKEN` e
+   `GEOGRID_COMMERCE_OPERATOR_IDS` no backend. Acesse por HTTPS com cookie
+   seguro e inclua a origem do painel em `ZURI_ALLOWED_ORIGINS`, se definida.
+3. Com aprovação financeira, configure `estimated_live_task_cost_usd` com
+   uma estimativa conservadora por consulta, conforme a tarifa vigente para
+   o endpoint Live usado. Revise `enabled`, `daily_cap_usd`,
+   `default_event_cap_usd` na linha `system/default` e os limites
+   `cap_amount_usd` das linhas diária UTC e `event/manual-live`, quando
+   existirem. A menor configuração aplicável prevalece. O saldo diário é
+   compartilhado com o Standard. A aplicação aceita um lote Live por vez,
+   com até duas consultas em voo.
+4. Confirme as quatro aprovações de `landing_diagnostics_gate` listadas acima.
+   Configure `DATAFORSEO_LOGIN` e `DATAFORSEO_PASSWORD` como segredos.
+   Após autorização para ativar, configure `GEOGRID_FETCHER=dataforseo` e
+   `GEOGRID_MANUAL_LIVE_ENABLED=true`. Entre em `/api/commercial/admin` e
+   volte à pesquisa manual em `/`. O painel usa a sessão existente e a
+   rota `POST /api/commercial/admin/live-scans`, com um UUID em
+   `Idempotency-Key`. Reenvie a mesma chave com os mesmos parâmetros para
+   consultar o pedido em caso de resposta perdida. Com
+   `GEOGRID_FETCHER=playwright`, o painel usa o fluxo gratuito.
+
+### Interrupção e rollback
+
+- Desative `GEOGRID_MANUAL_LIVE_ENABLED` e aguarde o lote terminar antes de
+  substituir a aplicação. Para interromper novas autorizações imediatamente,
+  use o controle financeiro `enabled=false` na linha `system/default`
+  sob o lock compartilhado `pg_advisory_xact_lock(1847219, 1)`. Esse
+  controle também pausa novas autorizações Standard. Pontos já autorizados
+  podem concluir. Para restaurar a pesquisa gratuita, use
+  `GEOGRID_FETCHER=playwright`.
+- Preserve a migração `009`, o ledger e os volumes ao voltar a uma imagem
+  anterior. Se a imagem anterior permitir Live sem reserva na rota legada,
+  mantenha `GEOGRID_FETCHER=playwright` nessa imagem.
+- Preserve reservas `uncertain` e `cost_overrun` até verificar o total
+  efetivamente cobrado. Com evidência e nenhum ponto ainda em voo, use
+  `app.live_finance.reconcile_live_scan` com o UUID, o total confirmado em
+  USD e a referência da evidência. Após queda abrupta, um ponto pode ficar
+  `authorized`. Somente com o processo original encerrado e após verificar
+  o provedor, use `mark_live_query_uncertain` para cada ponto órfão e então
+  reconcilie o lote. Para uma reserva órfã sem ponto autorizado ou incerto,
+  use `finish_live_scan` após confirmar que o processo original terminou.
+  Nunca reenvie automaticamente um ponto cujo envio tenha sido incerto.

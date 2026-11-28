@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="manual-scan-url" content="__GEOGRID_MANUAL_SCAN_URL__">
 <meta name="maptiler-api-key" content="__GEOGRID_MAPTILER_API_KEY__">
 <title>Smart Grid by ZURI</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -58,6 +59,7 @@
     <div class="small muted">Drag the <b>blue center pin</b> to move the grid. <a href="#" id="previewGrid">Preview grid</a> · <a href="#" id="resetCenter">Reset to business</a></div>
     <button id="runBtn" class="primary" disabled>Run scan</button>
     <div id="runMsg" class="small"></div>
+    <a id="liveLogin" href="/api/commercial/admin" target="_blank" rel="noopener" hidden>Entrar como operador</a>
   </section>
 
   <section class="grow">
