@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import db
+from .config.branding import BRANDING, get_print_report_sections
 from .competitive_metrics import (
     classify_competitors,
     keyword_competition_v2,
@@ -37,6 +38,7 @@ from .external_api import ExternalRequestSizeLimitMiddleware, router as external
 from .landing import router as landing_router
 from .metrics import point_difficulty, scan_coverage, scan_metrics
 from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan
+from .utils.qrcode import generate_qrcode_svg_data_url
 
 
 # --------------------------------------------------
@@ -179,11 +181,17 @@ class ScanIn(BaseModel):
 
 @app.get("/")
 def index():
-    """Serve the web interface with its server-configured MapTiler key."""
+    """Serve the web interface with configured map and report branding."""
 
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     api_key = escape(os.environ.get("GEOGRID_MAPTILER_API_KEY", "").strip(), quote=True)
-    return HTMLResponse(page.replace("__GEOGRID_MAPTILER_API_KEY__", api_key))
+    print_intro, print_closing = get_print_report_sections(
+        generate_qrcode_svg_data_url(BRANDING.whatsapp_link)
+    )
+    page = page.replace("__GEOGRID_MAPTILER_API_KEY__", api_key)
+    page = page.replace("__ZURI_PRINT_INTRO__", print_intro)
+    page = page.replace("__ZURI_PRINT_CLOSING__", print_closing)
+    return HTMLResponse(page)
 
 
 # --------------------------------------------------
@@ -308,6 +316,15 @@ async def start_scans(
     body: ScanIn,
 ):
     """Create and queue GeoGrid scans."""
+
+    if os.environ.get("GEOGRID_FETCHER", "playwright").lower() == "dataforseo":
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Paid DataForSEO scans are disabled on this legacy endpoint; "
+                "use the authorized commercial scan flow"
+            ),
+        )
 
     business = db.get_business(
         body.business_id

@@ -1,5 +1,5 @@
 # app/utils/qrcode.py
-"""Utilitário para gerar QR Code em base64 sem dependências externas."""
+"""Geração local de QR Codes para relatórios."""
 
 import base64
 from io import BytesIO
@@ -58,21 +58,29 @@ def generate_qrcode_base64(
 
 
 def generate_qrcode_svg(data: str) -> str:
-    """
-    Fallback: gera SVG simples de QR Code usando arte ASCII art.
-    Útil quando qrcode não está disponível.
-    """
-    # Implementação simplificada: padrão visual fixo para WhatsApp
-    # Em produção, isso seria substituído por qrcode real
-    svg = f"""
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="150" height="150">
-        <rect width="200" height="200" fill="white"/>
-        <text x="100" y="100" text-anchor="middle" dy="0.3em" font-size="14" fill="black">
-            QR Code
-        </text>
-        <text x="100" y="120" text-anchor="middle" dy="0.3em" font-size="10" fill="#666">
-            {data[:30]}...
-        </text>
-    </svg>
-    """
-    return svg.strip()
+    """Generate an actual QR Code as inline SVG."""
+    data_url = generate_qrcode_svg_data_url(data)
+    encoded = data_url.partition(",")[2]
+    return base64.b64decode(encoded).decode("utf-8")
+
+
+def generate_qrcode_svg_data_url(data: str) -> str:
+    """Generate a real QR Code as an SVG data URL without requiring Pillow."""
+    if not HAS_QRCODE:
+        raise RuntimeError("The qrcode package is required to generate report QR Codes")
+
+    from qrcode.image.svg import SvgPathImage
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    image = qr.make_image(image_factory=SvgPathImage)
+    buffered = BytesIO()
+    image.save(buffered)
+    encoded = base64.b64encode(buffered.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"

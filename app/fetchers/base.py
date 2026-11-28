@@ -1,5 +1,6 @@
 """Fetcher interface. A fetcher returns the top Maps results for a keyword searched from a lat/lng."""
 import re
+from decimal import Decimal
 from typing import Protocol
 
 MAX_RESULTS = 20
@@ -21,6 +22,7 @@ class FetchStatusError(FetchError):
         api_status_code: int | None = None,
         api_status_message: str | None = None,
         results: list[dict] | None = None,
+        cost_usd: Decimal | None = None,
     ):
         super().__init__(message)
         self.outcome = outcome
@@ -28,6 +30,7 @@ class FetchStatusError(FetchError):
         self.api_status_code = api_status_code
         self.api_status_message = api_status_message
         self.results = results or []
+        self.cost_usd = cost_usd
 
 
 class Fetcher(Protocol):

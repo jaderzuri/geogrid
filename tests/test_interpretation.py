@@ -45,17 +45,17 @@ class TestCoverageInterpretation:
     def test_complete_processing_some_no_results(self):
         metrics = {
             "requested_points": 9,
-            "valid_points": 9,
+            "valid_points": 3,
             "no_results_points": 6,
             "failed_points": 0,
             "pending_points": 0,
-            "coverage_pct": 100.0,
-            "found_pct": 33.3,
+            "coverage_pct": 33.3,
+            "found_pct": 0.0,
         }
         result = generate_coverage_interpretation(metrics)
-        assert "concluída" in result.lower()
-        assert "não foram retornadas empresas" in result
-        assert "palavras-chave alternativas" in result
+        assert "execução foi concluída" in result.lower()
+        assert "3/9 pontos" in result
+        assert "não comprova inexistência" in result
 
     def test_technical_failures_with_some_valid(self):
         metrics = {
@@ -83,8 +83,9 @@ class TestCoverageInterpretation:
             "found_pct": 0.0,
         }
         result = generate_coverage_interpretation(metrics)
-        assert "problemas técnicos" in result
-        assert "Tente novamente" in result
+        assert "falhas técnicas" in result
+        assert "não comprova inexistência" in result
+        assert "não há pontos com resultados válidos" in result.lower()
 
 
 class TestPositioningInterpretation:
@@ -96,9 +97,44 @@ class TestPositioningInterpretation:
             "top10_pct": 0.0,
         }
         result = generate_positioning_interpretation(metrics, "encanador")
-        assert "não foi encontrada" in result
+        assert "não foi localizada" in result
         assert "encanador" in result
         assert "Google Business" in result
+
+    def test_no_results_and_no_valid_points_do_not_claim_business_absence(self):
+        metrics = {
+            "found_pct": 0.0,
+            "valid_points": 0,
+            "no_results_points": 9,
+            "failed_points": 0,
+            "pending_points": 0,
+            "arp": None,
+            "solv": 0.0,
+            "top10_pct": 0.0,
+        }
+
+        result = generate_positioning_interpretation(metrics, "encanador")
+
+        assert "não é possível avaliar o posicionamento" in result
+        assert "não comprova inexistência" in result
+        assert "empresa não foi localizada" not in result.lower()
+
+    def test_zero_visibility_is_limited_to_valid_points_when_some_queries_fail(self):
+        metrics = {
+            "found_pct": 0.0,
+            "valid_points": 3,
+            "no_results_points": 0,
+            "failed_points": 6,
+            "pending_points": 0,
+            "arp": None,
+            "solv": 0.0,
+            "top10_pct": 0.0,
+        }
+
+        result = generate_positioning_interpretation(metrics, "encanador")
+
+        assert "nos 3 pontos válidos analisados" in result
+        assert "não comprova inexistência" in result
 
     def test_weak_visibility(self):
         metrics = {

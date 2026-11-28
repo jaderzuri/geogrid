@@ -2,6 +2,7 @@
 """Configuração centralizada de identidade visual e branding ZURI."""
 
 from dataclasses import dataclass
+from html import escape
 from typing import NamedTuple
 
 
@@ -110,3 +111,47 @@ def get_cta_section_html() -> str:
     </p>
 </div>
 """
+
+
+def get_print_report_sections(qr_data_uri: str) -> tuple[str, str]:
+    """Return institutional introduction and closing sections for the UI report."""
+    if not qr_data_uri.startswith("data:image/svg+xml;base64,"):
+        raise ValueError("A generated SVG QR Code data URL is required")
+
+    company = escape(BRANDING.company_name)
+    whatsapp = escape(BRANDING.whatsapp)
+    whatsapp_link = escape(BRANDING.whatsapp_link, quote=True)
+    phone = escape(BRANDING.phone)
+    phone_link = escape(BRANDING.phone_link, quote=True)
+    website = escape(BRANDING.website)
+    website_url = escape(BRANDING.website_url, quote=True)
+    instagram = escape(BRANDING.instagram_handle)
+    instagram_url = escape(BRANDING.instagram_url, quote=True)
+    tagline = escape(BRANDING.tagline)
+    qr = escape(qr_data_uri, quote=True)
+
+    intro = f"""
+<section class="print-only print-intro" aria-label="Apresentação do relatório">
+  <div class="print-brand">Smart Grid by ZURI <span>{company}</span></div>
+  <p>Este diagnóstico apresenta os resultados observados para a palavra-chave e os pontos desta grade no momento da pesquisa. As posições por ponto são observações locais; o ATRP representa a posição média calculada para a empresa.</p>
+</section>
+"""
+    closing = f"""
+<section class="print-only print-closing" aria-label="Contato institucional">
+  <div class="print-cta">
+    <div>
+      <h2>Conheça a otimização do Perfil da Empresa no Google</h2>
+      <p>Converse com a {company} para conhecer os serviços de otimização e posicionamento digital para sua empresa.</p>
+      <p class="print-tagline">{tagline}</p>
+      <p><a href="{whatsapp_link}" target="_blank" rel="noopener noreferrer">{escape(BRANDING.whatsapp_icon)} {whatsapp}</a></p>
+      <p><a href="{phone_link}">{escape(BRANDING.phone_icon)} {phone}</a></p>
+      <p><a href="{website_url}" target="_blank" rel="noopener noreferrer">{website}</a> · <a href="{instagram_url}" target="_blank" rel="noopener noreferrer">{instagram}</a></p>
+    </div>
+    <a class="print-qr-link" href="{whatsapp_link}" target="_blank" rel="noopener noreferrer">
+      <img src="{qr}" alt="QR Code para conversar com a ZURI pelo WhatsApp">
+      <span>Aponte a câmera para conversar pelo WhatsApp</span>
+    </a>
+  </div>
+</section>
+"""
+    return intro, closing

@@ -1,8 +1,17 @@
 """Tests for ZURI branding configuration and utilities."""
 
 import pytest
-from app.config.branding import BRANDING, get_footer_html, get_cta_section_html
-from app.utils.qrcode import generate_qrcode_base64
+from app.config.branding import (
+    BRANDING,
+    get_cta_section_html,
+    get_footer_html,
+    get_print_report_sections,
+)
+from app.utils.qrcode import (
+    generate_qrcode_base64,
+    generate_qrcode_svg,
+    generate_qrcode_svg_data_url,
+)
 
 
 class TestBrandingConfig:
@@ -124,6 +133,25 @@ class TestCtaHtml:
 
 class TestQrCodeGeneration:
     """Test QR Code generation utilities."""
+
+    def test_svg_qr_code_is_real_and_contains_whatsapp_url_payload(self):
+        data_url = generate_qrcode_svg_data_url(BRANDING.whatsapp_link)
+        assert data_url.startswith("data:image/svg+xml;base64,")
+        svg = generate_qrcode_svg(BRANDING.whatsapp_link)
+        assert "<path" in svg
+        assert "QR Code" not in svg
+
+    def test_ui_report_branding_contains_links_and_qr(self):
+        qr_data_url = generate_qrcode_svg_data_url(BRANDING.whatsapp_link)
+        intro, closing = get_print_report_sections(qr_data_url)
+
+        assert "Smart Grid by ZURI" in intro
+        assert "posição média calculada" in intro
+        assert f'href="{BRANDING.whatsapp_link}"' in closing
+        assert f'href="{BRANDING.phone_link}"' in closing
+        assert f'href="{BRANDING.website_url}"' in closing
+        assert f'href="{BRANDING.instagram_url}"' in closing
+        assert f'src="{qr_data_url}"' in closing
 
     def test_qrcode_generation_returns_base64_or_none(self):
         """generate_qrcode_base64 should return base64 string or None."""

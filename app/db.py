@@ -248,6 +248,8 @@ CREATE TABLE IF NOT EXISTS commercial_prospects (
     storage_authorized INTEGER NOT NULL CHECK (storage_authorized IN (0, 1)),
     export_eligible INTEGER NOT NULL CHECK (export_eligible IN (0, 1)),
     name TEXT NOT NULL,
+    phone TEXT,
+    website TEXT,
     cid TEXT,
     place_id TEXT,
     address TEXT,
@@ -273,6 +275,7 @@ CREATE TABLE IF NOT EXISTS commercial_prospect_observations (
     point_row INTEGER NOT NULL,
     point_col INTEGER NOT NULL,
     result_rank INTEGER NOT NULL,
+    provider_position INTEGER,
     record_status TEXT NOT NULL DEFAULT 'previously_known' CHECK (
         record_status IN ('new', 'previously_known')
     ),
@@ -737,6 +740,17 @@ def init_db() -> None:
             row["name"]
             for row in c.execute("PRAGMA table_info(commercial_prospect_observations)")
         }
+        prospect_columns = {
+            row["name"] for row in c.execute("PRAGMA table_info(commercial_prospects)")
+        }
+        for name in ("phone", "website"):
+            if name not in prospect_columns:
+                c.execute(f"ALTER TABLE commercial_prospects ADD COLUMN {name} TEXT")
+        if "provider_position" not in prospect_observation_columns:
+            c.execute(
+                "ALTER TABLE commercial_prospect_observations "
+                "ADD COLUMN provider_position INTEGER"
+            )
         if "record_status" not in prospect_observation_columns:
             c.execute(
                 "ALTER TABLE commercial_prospect_observations ADD COLUMN "

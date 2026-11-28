@@ -35,32 +35,57 @@ def generate_coverage_interpretation(metrics: dict) -> str:
     if pending > 0:
         return f"A pesquisa ainda está em processamento. {valid}/{requested} pontos foram processados até o momento."
     
+    processed = valid + no_results + failed
+
     # Check for technical failures
     if failed > 0:
         if valid == 0:
-            return "Não foi possível concluir a pesquisa devido a problemas técnicos. Tente novamente mais tarde."
+            failure_detail = (
+                f"{failed} ponto apresentou falha técnica"
+                if failed == 1
+                else f"{failed} pontos apresentaram falhas técnicas"
+            )
+            no_result_detail = (
+                f"{no_results} consulta não retornou resultados"
+                if no_results == 1
+                else f"{no_results} consultas não retornaram resultados"
+            )
+            return (
+                "Não há pontos com resultados válidos para avaliar. "
+                f"{failure_detail}; {no_result_detail}. "
+                "A ausência de resultados não comprova inexistência de empresas ou de demanda."
+            )
+        no_result_detail = (
+            f"{no_results} consulta não retornou resultados"
+            if no_results == 1
+            else f"{no_results} consultas não retornaram resultados"
+        )
+        failure_detail = (
+            f"{failed} ponto apresentou problema técnico"
+            if failed == 1
+            else f"{failed} pontos apresentaram problemas técnicos"
+        )
         return (
             f"A pesquisa foi concluída com interrupções. {valid}/{requested} pontos foram "
-            f"processados com sucesso, mas {failed} ponto{'s' if failed > 1 else ''} apresentou problemas técnicos."
+            f"processados com resultados válidos; {no_result_detail} e "
+            f"{failure_detail}. "
+            "A leitura comercial se limita aos pontos válidos."
         )
     
-    # All points processed successfully
-    if coverage_pct == 100.0:
-        # All points have results
+    # A query with no results is operationally complete, but has no result coverage.
+    if processed >= requested or coverage_pct == 100.0:
         if no_results == 0:
             return (
                 f"A pesquisa foi concluída com sucesso em todos os {requested} pontos. "
                 f"Empresa encontrada em {round(found_pct)}% das localidades analisadas."
             )
         
-        # Some points have no results
-        no_results_pct = round(100 * no_results / valid, 1) if valid > 0 else 0
-        found_pct_of_valid = round(100 * (valid - no_results) / valid, 1) if valid > 0 else 0
-        
         return (
-            f"A pesquisa foi concluída em todos os {valid} pontos. "
-            f"Em {no_results_pct}% das localidades não foram retornadas empresas para a palavra-chave pesquisada. "
-            f"Recomenda-se avaliar palavras-chave alternativas e sua relevância para a região."
+            f"A execução foi concluída nos {requested} pontos, sem falhas técnicas. "
+            f"Foram retornados resultados em {valid}/{requested} pontos ({coverage_pct}% de cobertura de resultados); "
+            f"{no_results} consulta{'s' if no_results != 1 else ''} "
+            f"{'não retornou' if no_results == 1 else 'não retornaram'} empresas para a palavra-chave. "
+            "Ausência de resultados retornados não comprova inexistência de empresas ou de demanda."
         )
     
     # Partial coverage (but all attempted points are done)
@@ -92,10 +117,36 @@ def generate_positioning_interpretation(metrics: dict, keyword: str) -> str:
     solv = metrics.get("solv", 0.0)
     top10_pct = metrics.get("top10_pct", 0.0)
     
+    if "valid_points" in metrics and metrics.get("valid_points", 0) == 0:
+        failed = metrics.get("failed_points", 0)
+        no_results = metrics.get("no_results_points", 0)
+        pending = metrics.get("pending_points", 0)
+        if pending > 0:
+            return "Ainda não há pontos válidos suficientes para avaliar o posicionamento."
+        if failed > 0:
+            return (
+                "Não foi possível avaliar o posicionamento devido a falhas técnicas; "
+                "os resultados disponíveis não permitem uma conclusão comercial."
+            )
+        if no_results > 0:
+            return (
+                f"O provedor não retornou resultados para '{keyword}' em {no_results} consultas. "
+                "Sem resultados válidos, não é possível avaliar o posicionamento; "
+                "isso não comprova inexistência de empresas ou de demanda."
+            )
+        return "Não há pontos válidos suficientes para avaliar o posicionamento."
+
     if not found_pct or found_pct == 0:
+        valid_points = metrics.get("valid_points")
+        observed = (
+            f" nos {valid_points} pontos válidos analisados"
+            if valid_points is not None
+            else ""
+        )
         return (
-            f"A empresa não foi encontrada na busca por '{keyword}' em nenhuma localidade analisada. "
-            f"Verificar estratégia de SEO local e presença no Google Business."
+            f"A empresa não foi localizada entre os resultados retornados para '{keyword}'{observed}. "
+            "Isso não comprova inexistência de empresas ou de demanda. "
+            "Verificar a estratégia de SEO local e a presença no Google Business."
         )
     
     if found_pct < 30:
