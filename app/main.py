@@ -54,6 +54,7 @@ from .live_finance import (
     reserve_live_scan,
     scan_fingerprint,
 )
+from .manual_standard import router as manual_standard_router
 from .metrics import point_difficulty, scan_coverage, scan_metrics
 from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan, uses_dataforseo
 from .utils.qrcode import generate_qrcode_svg_data_url
@@ -127,6 +128,7 @@ app.include_router(external_router)
 app.include_router(landing_router)
 app.include_router(business_finder_router)
 app.include_router(commercial_router)
+app.include_router(manual_standard_router)
 app.include_router(wordpress_router)
 
 

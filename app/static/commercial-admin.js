@@ -267,3 +267,146 @@ logoutButton.addEventListener("click", () => {
   financeBalances.replaceChildren();
   financeStatus.textContent = "";
 });
+
+const standardForm = document.getElementById("standard-batch");
+const standardMode = document.getElementById("standard-modality");
+const standardCsv = document.getElementById("standard-csv");
+const standardStatus = document.getElementById("standard-status");
+const standardProgress = document.getElementById("standard-progress");
+const standardConfirm = document.getElementById("standard-confirm");
+const standardRefresh = document.getElementById("standard-refresh");
+const standardPath = "/api/commercial/admin/standard-scans";
+const standardStorage = "geogrid.standard-batch";
+let proposedStandard;
+
+function resetStandardQuote() {
+  proposedStandard = undefined;
+  standardConfirm.disabled = true;
+}
+
+standardForm.closest("details").addEventListener("toggle", async (event) => {
+  if (!event.currentTarget.open) return;
+  try {
+    const companies = await requestJson("/api/businesses");
+    const items = companies.map((company) => {
+      const item = document.createElement("li");
+      item.textContent = `${company.id} · ${company.name}`;
+      return item;
+    });
+    document.getElementById("standard-companies").replaceChildren(...items);
+    standardRefresh.disabled = !sessionStorage.getItem(standardStorage);
+  } catch (error) {
+    standardStatus.textContent = error.message;
+  }
+});
+
+standardMode.addEventListener("change", async () => {
+  resetStandardQuote();
+  const isLive = standardMode.value === "live";
+  document.getElementById("standard-fields").hidden = isLive;
+  document.getElementById("manual-live-link").hidden = !isLive;
+  if (!isLive) {
+    standardStatus.textContent = "";
+    return;
+  }
+  standardStatus.textContent = "Consultando a tarifa Live…";
+  try {
+    const data = await requestJson("/api/commercial/admin/finance");
+    if (standardMode.value !== "live") return;
+    const price = data.control.estimated_live_task_cost_usd;
+    standardStatus.textContent = price == null
+      ? "Tarifa Live indisponível."
+      : `Reserva Live estimada: US$ ${price} por ponto. O painel Live mantém autorização e orçamento próprios.`;
+  } catch (error) {
+    if (standardMode.value === "live") standardStatus.textContent = error.message;
+  }
+});
+standardCsv.addEventListener("input", resetStandardQuote);
+document.getElementById("standard-csv-file").addEventListener("change", async (event) => {
+  resetStandardQuote();
+  const file = event.target.files[0];
+  if (!file || file.size > 24000) {
+    standardStatus.textContent = "Selecione um arquivo CSV de até 24 KB.";
+    return;
+  }
+  standardCsv.value = await file.text();
+});
+
+standardForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  resetStandardQuote();
+  const payload = { modality: standardMode.value, csv_text: standardCsv.value };
+  try {
+    const quote = await requestJson(`${standardPath}/quote`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+    if (payload.modality !== standardMode.value || payload.csv_text !== standardCsv.value) return;
+    const cost = quote.total_usd == null ? "indisponível" : `US$ ${quote.total_usd}`;
+    standardStatus.textContent = `${quote.researches} pesquisas · ${quote.queries} consultas · estimativa ${cost}.`;
+    if (quote.enabled) {
+      proposedStandard = { ...payload, approved_total_usd: quote.total_usd };
+      standardConfirm.disabled = false;
+    } else {
+      standardStatus.textContent += " Modalidade indisponível no momento.";
+    }
+  } catch (error) {
+    standardStatus.textContent = error.message;
+  }
+});
+
+async function refreshStandard() {
+  try {
+    const pending = JSON.parse(sessionStorage.getItem(standardStorage) || "null");
+    if (!pending?.batch_id) return;
+    const result = await requestJson(`${standardPath}/${pending.batch_id}`);
+    const rows = result.researches.map((research) => {
+      const item = document.createElement("li");
+      item.textContent = `${research.company_name} · ${research.keyword} · ${research.status} · ${research.completed_points}/${research.total_points}`;
+      return item;
+    });
+    const completed = new Map();
+    for (const research of result.researches) {
+      const group = completed.get(research.manual_business_id) || [];
+      group.push(research);
+      completed.set(research.manual_business_id, group);
+    }
+    for (const [business, group] of completed) {
+      if (group.length < 3 || group.some((research) => research.status !== "done")) continue;
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = `${standardPath}/${pending.batch_id}/companies/${business}/pdf`;
+      link.textContent = `PDF consolidado · ${group[0].company_name}`;
+      item.append(link);
+      rows.push(item);
+    }
+    standardProgress.replaceChildren(...rows);
+    standardStatus.textContent = `Lote ${result.batch_id}`;
+  } catch (error) {
+    standardStatus.textContent = error.message;
+  }
+}
+
+standardConfirm.addEventListener("click", async () => {
+  if (!proposedStandard) return;
+  const body = JSON.stringify(proposedStandard);
+  standardConfirm.disabled = true;
+  try {
+    const previous = JSON.parse(sessionStorage.getItem(standardStorage) || "null");
+    if (previous && !previous.batch_id && previous.body !== body) {
+      throw new Error("Existe um envio pendente. Reenvie o mesmo lote para recuperar o identificador.");
+    }
+    const key = previous?.body === body ? previous.key : crypto.randomUUID();
+    sessionStorage.setItem(standardStorage, JSON.stringify({ body, key, batch_id: previous?.body === body ? previous.batch_id : null }));
+    const result = await requestJson(standardPath, {
+      method: "POST", body, headers: { "Idempotency-Key": key },
+    });
+    sessionStorage.setItem(standardStorage, JSON.stringify({ body, key, batch_id: result.batch_id }));
+    standardRefresh.disabled = false;
+    await refreshStandard();
+    resetStandardQuote();
+  } catch (error) {
+    standardStatus.textContent = error.message;
+    standardConfirm.disabled = !proposedStandard;
+  }
+});
+standardRefresh.addEventListener("click", refreshStandard);

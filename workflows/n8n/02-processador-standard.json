@@ -200,7 +200,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { external_request_id: $('Extract Exact Google Place ID').item.json.request_id, external_business_id: $('Validate Resolved Business').item.json.business_id, keyword: $('Extract Exact Google Place ID').item.json.keyword } }}",
+        "jsonBody": "={{ (() => { const r = $('Extract Exact Google Place ID').item.json; return { external_request_id: r.request_id, external_business_id: r.manual_batch_id ? 'manual-' + r.manual_business_id : $('Validate Resolved Business').item.json.business_id, keyword: r.keyword, ...(r.manual_batch_id ? {manual_claim_token: r.claim_token} : {}) }; })() }}",
         "options": {
           "response": {
             "response": {
@@ -226,7 +226,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const scan = $json;\nconst request = $('Extract Exact Google Place ID').item.json;\nif (!scan.scan_id || scan.grid_size !== 3 || scan.spacing_km !== 1 || scan.total !== 9 || scan.points?.length !== 9 || scan.language_code !== 'pt') throw new Error('Smart Grid returned an unexpected external scan contract');\nconst tasks = scan.points.map(p => ({ keyword: scan.keyword, location_coordinate: `${p.lat},${p.lng},14z`, language_code: 'pt', priority: 1, depth: 20, tag: `${request.request_id}:${p.row}:${p.col}` }));\nreturn { json: { request_id: request.request_id, claim_token: request.claim_token, scan_id: scan.scan_id, business_id: scan.business_id, center: scan.center, points: scan.points.map(p => ({ row: p.row, col: p.col, lat: p.lat, lng: p.lng })), tasks } };"
+        "jsCode": "const scan = $json;\nconst request = $('Extract Exact Google Place ID').item.json;\nif (!scan.scan_id || scan.grid_size !== (request.grid_size ?? 3) || scan.spacing_km !== (request.spacing_km ?? 1) || scan.total !== request.total_points || scan.points?.length !== request.total_points || scan.language_code !== 'pt') throw new Error('Smart Grid returned an unexpected external scan contract');\nconst tasks = scan.points.map(p => ({ keyword: scan.keyword, location_coordinate: `${p.lat},${p.lng},14z`, language_code: 'pt', priority: request.standard_priority ?? 1, depth: 20, tag: `${request.request_id}:${p.row}:${p.col}` }));\nreturn { json: { request_id: request.request_id, claim_token: request.claim_token, scan_id: scan.scan_id, business_id: scan.business_id, center: scan.center, points: scan.points.map(p => ({ row: p.row, col: p.col, lat: p.lat, lng: p.lng })), tasks } };"
       },
       "id": "40a9be28-aea5-4c44-880a-dab1697b06b4",
       "name": "Build Nine Standard Tasks",
@@ -366,7 +366,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const response = $json.response_body;\nconst points = $json.point_map;\nif (!response || !Array.isArray(points) || points.length !== 9) throw new Error('Journal response or point map is invalid');\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nconst tasks = Array.isArray(response.tasks) ? response.tasks : [];\nlet mapped;\nif (code !== 20000 && tasks.length === 0) mapped = points.map(p => ({ row: p.row, col: p.col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\nelse {\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = points.map(p => {\n    const task = byTag.get(p.tag);\n    if (!task) return { row: p.row, col: p.col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag; manual reconciliation required' };\n    const taskCode = Number(task.status_code);\n    return { row: p.row, col: p.col, task_id: task.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: task.status_message || message, cost: task.cost == null ? null : Number(task.cost), error_category: categories[taskCode] || (task.id ? null : 'technical_error'), error_message: task.id ? null : (task.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst costsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nreturn { json: { request_id: $json.request_id, claim_token: $json.authorization_claim_token, recovery_token: $json.recovery_token, task_results: mapped, total_cost_usd: totalKnown ? Number(response.cost) : costsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null } };"
+        "jsCode": "const response = $json.response_body;\nconst points = $json.point_map;\nif (!response || !Array.isArray(points) || points.length < 9 || points.length > 169) throw new Error('Journal response or point map is invalid');\nconst code = Number(response.status_code);\nconst message = typeof response.status_message === 'string' ? response.status_message : null;\nconst categories = { 401: 'authentication_error', 40100: 'authentication_error', 40104: 'authentication_error', 402: 'insufficient_balance', 40200: 'insufficient_balance', 40201: 'access_denied', 40202: 'rate_limit', 40203: 'budget_limit', 40205: 'duplicate_task_limit', 40206: 'duplicate_task_limit', 40209: 'rate_limit', 40210: 'insufficient_balance', 40000: 'request_error', 40001: 'request_error', 40006: 'request_error', 50000: 'technical_error', 50301: 'technical_error', 50401: 'technical_error', 50402: 'technical_error' };\nconst tasks = Array.isArray(response.tasks) ? response.tasks : [];\nlet mapped;\nif (code !== 20000 && tasks.length === 0) mapped = points.map(p => ({ row: p.row, col: p.col, task_id: null, status_code: code || null, status_message: message, cost: null, error_category: categories[code] || 'technical_error', error_message: message || 'DataForSEO rejected task_post' }));\nelse {\n  const byTag = new Map(tasks.map(t => [t.data?.tag || t.tag, t]).filter(([tag]) => tag));\n  mapped = points.map(p => {\n    const task = byTag.get(p.tag);\n    if (!task) return { row: p.row, col: p.col, task_id: null, status_code: null, status_message: 'Response could not be reliably associated with a grid point', cost: null, error_category: 'technical_error', error_message: 'Missing task tag; manual reconciliation required' };\n    const taskCode = Number(task.status_code);\n    return { row: p.row, col: p.col, task_id: task.id || null, status_code: Number.isFinite(taskCode) ? taskCode : null, status_message: task.status_message || message, cost: task.cost == null ? null : Number(task.cost), error_category: categories[taskCode] || (task.id ? null : 'technical_error'), error_message: task.id ? null : (task.status_message || message || 'No DataForSEO task ID returned') };\n  });\n}\nconst costsKnown = mapped.every(t => Number.isFinite(t.cost) && t.cost >= 0);\nconst totalKnown = response.cost != null && Number.isFinite(Number(response.cost)) && Number(response.cost) >= 0;\nreturn { json: { request_id: $json.request_id, claim_token: $json.authorization_claim_token, recovery_token: $json.recovery_token, task_results: mapped, total_cost_usd: totalKnown ? Number(response.cost) : costsKnown ? mapped.reduce((sum, t) => sum + t.cost, 0) : null } };"
       },
       "id": "p03-map-paid-response",
       "name": "Reconstruct Journaled DataForSEO Response",
@@ -620,6 +620,41 @@
         },
         "onError": "continueErrorOutput"
     }
+,
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-manual-business",
+              "leftValue": "={{ $json.manual_batch_id != null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "04481d42-c5ce-45a7-9ac8-016b087705e1",
+      "name": "Is Manual Standard Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        710,
+        140
+      ]
+    }
   ],
   "connections": {
     "Run Every Minute": {
@@ -653,7 +688,7 @@
       "main": [
         [
           {
-            "node": "Has Verifiable Place ID",
+            "node": "Is Manual Standard Request",
             "type": "main",
             "index": 0
           }
@@ -1022,6 +1057,24 @@
         [
           {
             "node": "Record Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Manual Standard Request": {
+      "main": [
+        [
+          {
+            "node": "Create Idempotent Smart Grid Scan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Verifiable Place ID",
             "type": "main",
             "index": 0
           }

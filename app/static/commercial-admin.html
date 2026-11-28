@@ -31,6 +31,32 @@
     </section>
 
     <section id="admin-panel" hidden>
+      <details class="panel">
+        <summary>Pesquisas manuais</summary>
+        <form id="standard-batch">
+          <label>Modalidade <select id="standard-modality">
+            <option value="normal">Standard Normal</option>
+            <option value="priority">Standard Priority</option>
+            <option value="live">Live (painel de pesquisa)</option>
+          </select></label>
+          <a id="manual-live-link" href="/" hidden>Abrir painel Live</a>
+          <div id="standard-fields">
+            <p>Cadastre empresas no <a href="/">painel de pesquisa</a> e use os IDs da lista abaixo.
+              Separe palavras-chave com |. Cada linha representa uma empresa.</p>
+            <ul id="standard-companies"></ul>
+            <label>Importar CSV <input id="standard-csv-file" type="file" accept=".csv,text/csv"></label>
+            <label>Lista CSV
+              <textarea id="standard-csv" rows="5" required
+                placeholder="business_id,keywords,grid_size,spacing_km"></textarea>
+            </label>
+            <button type="submit">Calcular estimativa</button>
+            <button type="button" id="standard-confirm" disabled>Confirmar lote</button>
+            <button type="button" id="standard-refresh" disabled>Atualizar andamento</button>
+          </div>
+          <p id="standard-status" role="status"></p>
+          <ul id="standard-progress"></ul>
+        </form>
+      </details>
       <details class="panel" id="finance-panel">
         <summary>Controle financeiro</summary>
         <button id="finance-refresh" type="button">Atualizar saldos</button>

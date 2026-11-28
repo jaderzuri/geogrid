@@ -125,7 +125,7 @@ def test_workflows_use_standard_post_and_advanced_get_without_live_calls():
     assert "serp/google/maps/task_post" in serialized
     assert "serp/google/maps/task_get/advanced/" in serialized
     assert "serp/google/maps/live" not in serialized
-    assert "priority: 1" in serialized
+    assert "priority: request.standard_priority ?? 1" in serialized
     assert "language_code: 'pt'" in serialized
     post_node = next(
         node for node in processor["nodes"]

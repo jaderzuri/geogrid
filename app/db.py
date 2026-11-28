@@ -885,13 +885,14 @@ def create_external_scan(
     external_business_id: str,
     keyword: str,
     language_code: str,
+    *, registered_business_id: int | None = None, grid_size: int = 3, spacing_km: float = 1.0,
 ) -> tuple[dict, bool]:
-    """Create a fixed 3x3 external scan, or return its idempotent prior record."""
+    """Create a external scan, or return its idempotent prior record."""
     with connect() as c:
         c.execute("BEGIN IMMEDIATE")
         existing = c.execute(
             "SELECT e.external_id, e.external_business_id, e.external_request_id, "
-            "s.keyword FROM external_scans e JOIN scans s ON s.id = e.scan_id "
+            "s.keyword, s.grid_size, s.spacing_km FROM external_scans e JOIN scans s ON s.id = e.scan_id "
             "WHERE e.client_id = ? AND e.external_request_id = ?",
             (client_id, external_request_id),
         ).fetchone()
@@ -899,22 +900,28 @@ def create_external_scan(
             if (
                 existing["external_business_id"] != external_business_id
                 or existing["keyword"] != keyword
+                or existing["grid_size"] != grid_size
+                or existing["spacing_km"] != spacing_km
             ):
                 raise ExternalConflictError(
                     "external_request_id was already used with different scan details"
                 )
             return self_external_scan(c, client_id, existing["external_id"]), False
 
-        business_row = c.execute(
-            "SELECT b.* FROM external_businesses eb "
-            "JOIN businesses b ON b.id = eb.business_id "
-            "WHERE eb.client_id = ? AND eb.external_business_id = ?",
-            (client_id, external_business_id),
-        ).fetchone()
+        if registered_business_id is not None:
+            business_row = c.execute(
+                "SELECT * FROM businesses WHERE id = ?", (registered_business_id,)
+            ).fetchone()
+        else:
+            business_row = c.execute(
+                "SELECT b.* FROM external_businesses eb "
+                "JOIN businesses b ON b.id = eb.business_id "
+                "WHERE eb.client_id = ? AND eb.external_business_id = ?",
+                (client_id, external_business_id),
+            ).fetchone()
         if not business_row:
             raise ExternalScanNotFoundError
         business = dict(business_row)
-        grid_size, spacing_km = 3, 1.0
         commercial_diagnostic = c.execute(
             "SELECT d.*, l.business_confirmed, l.business_id AS lead_business_id "
             "FROM commercial_diagnostics d "
@@ -927,7 +934,8 @@ def create_external_scan(
                 commercial_diagnostic["product_id"] != "express"
                 or commercial_diagnostic["status"] not in {"reserved", "queued"}
                 or not commercial_diagnostic["business_confirmed"]
-                or commercial_diagnostic["grid_size"] != 3
+                or registered_business_id is not None
+                or commercial_diagnostic["grid_size"] != grid_size
                 or commercial_diagnostic["keyword"] != keyword
                 or commercial_diagnostic["confirmed_provider_id"] != "google_places"
                 or commercial_diagnostic["confirmed_reference_id"] != business.get("place_id")
@@ -942,7 +950,7 @@ def create_external_scan(
             "INSERT INTO scans "
             "(business_id, keyword, grid_size, spacing_km, center_lat, center_lng, "
             "status, progress, total, created, origin, result_provider) "
-            "VALUES (?,?,?,?,?,?,'queued',0,9,?,'external','dataforseo_standard')",
+            "VALUES (?,?,?,?,?,?,'queued',0,?,?,'external','dataforseo_standard')",
             (
                 business["id"],
                 keyword,
@@ -950,6 +958,7 @@ def create_external_scan(
                 spacing_km,
                 business["lat"],
                 business["lng"],
+                grid_size * grid_size,
                 created,
             ),
         )
@@ -996,7 +1005,7 @@ def create_external_scan(
             for point in grid
         ):
             raise ExternalInvalidGridError(
-                "business center cannot produce a valid 3x3 grid"
+                "business center cannot produce a valid grid"
             )
         for point in grid:
             c.execute(
