@@ -543,7 +543,7 @@ def test_legacy_scan_route_fails_closed_for_dataforseo(api, monkeypatch):
         "ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED",
         "ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED",
         "ZURI_GOOGLE_UPSTREAM_USE_APPROVED",
-        "GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED",
+        "GEOGRID_MAP_PROVIDER_COMMERCIAL_USE_APPROVED",
     ):
         monkeypatch.setenv(approval, "true")
 

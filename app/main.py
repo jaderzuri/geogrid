@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from . import db
 from .config.branding import BRANDING, get_print_report_sections
+from .config.maps import map_settings
 from .competitive_metrics import (
     classify_competitors,
     keyword_competition_v2,
@@ -53,6 +54,7 @@ from .live_finance import (
     reserve_live_scan,
     scan_fingerprint,
 )
+from .manual_standard import router as manual_standard_router
 from .metrics import point_difficulty, scan_coverage, scan_metrics
 from .scan import SimulatedMapsFetcher, compare, create_scans, make_fetcher, run_scan, uses_dataforseo
 from .utils.qrcode import generate_qrcode_svg_data_url
@@ -126,6 +128,7 @@ app.include_router(external_router)
 app.include_router(landing_router)
 app.include_router(business_finder_router)
 app.include_router(commercial_router)
+app.include_router(manual_standard_router)
 app.include_router(wordpress_router)
 
 
@@ -201,11 +204,22 @@ def index():
     """Serve the web interface with configured map and report branding."""
 
     page = (STATIC / "index.html").read_text(encoding="utf-8")
-    api_key = escape(os.environ.get("GEOGRID_MAPTILER_API_KEY", "").strip(), quote=True)
+    map_provider, map_style_url = map_settings()
+    api_key = os.environ.get("GEOGRID_MAPTILER_API_KEY", "").strip() if map_provider == "maptiler" else ""
+    map_dependencies = ""
+    if map_provider == "openfreemap":
+        map_dependencies = (
+            '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">'
+            '<script defer src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>'
+            '<script defer src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>'
+        )
     print_intro, print_closing = get_print_report_sections(
         generate_qrcode_svg_data_url(BRANDING.whatsapp_link)
     )
-    page = page.replace("__GEOGRID_MAPTILER_API_KEY__", api_key)
+    page = page.replace("__GEOGRID_MAP_PROVIDER__", map_provider)
+    page = page.replace("__GEOGRID_MAP_STYLE_URL__", escape(map_style_url, quote=True))
+    page = page.replace("__GEOGRID_MAP_DEPENDENCIES__", map_dependencies)
+    page = page.replace("__GEOGRID_MAPTILER_API_KEY__", escape(api_key, quote=True))
     page = page.replace("__GEOGRID_MANUAL_SCAN_URL__", (
         "/api/commercial/admin/live-scans" if uses_dataforseo() else "/api/scans"
     ))

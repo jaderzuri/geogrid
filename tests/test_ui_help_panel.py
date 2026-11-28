@@ -39,7 +39,10 @@ def _page_content() -> str:
           control: {zoom: () => ({addTo() {}})},
           tileLayer: (url, options) => {
             window.tileLayerConfig = {url, options};
-            return {addTo() {}};
+            return {
+              addTo() { return this; },
+              on(event, callback) { if (event === "load") callback(); return this; },
+            };
           },
           marker: (latlng, options) => {
             const marker = {
@@ -65,7 +68,7 @@ def _page_content() -> str:
         .replace('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>', leaflet_stub)
         .replace('<link rel="stylesheet" href="/static/style.css">', f"<style>{css}</style>")
         .replace('<link rel="stylesheet" href="/static/print.css">', f"<style>{print_css}</style>")
-        .replace('<script src="/static/app.js"></script>', f"<script>{app_js}</script>")
+        .replace('<script defer src="/static/app.js"></script>', f"<script>{app_js}</script>")
         .replace("<head>", '<head><base href="http://smart-grid.test/">')
     )
 
@@ -80,6 +83,7 @@ def browser():
 
 @pytest.fixture
 def help_page(browser, monkeypatch):
+    monkeypatch.setenv("GEOGRID_MAP_PROVIDER", "maptiler")
     monkeypatch.setenv("GEOGRID_MAPTILER_API_KEY", "test-maptiler-key")
     page: Page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.route(
@@ -370,7 +374,7 @@ def test_partial_scan_keeps_point_states_visible_in_pdf_print_view(help_page):
     assert any('class="pin pending"' in item for item in marker_html)
 
     help_page.locator("#printBtn").click()
-    assert help_page.evaluate("window.__printCalls") >= 1
+    help_page.wait_for_function("window.__printCalls >= 1")
     help_page.emulate_media(media="print")
     assert help_page.locator("#side").evaluate("(el) => getComputedStyle(el).display") == "none"
     assert help_page.locator("#scanCard").evaluate("(el) => getComputedStyle(el).display") != "none"
@@ -601,6 +605,7 @@ def test_tile_layer_uses_maptiler_xyz_url_and_required_attribution(help_page):
 
 
 def test_index_injects_maptiler_key_from_environment_safely(monkeypatch):
+    monkeypatch.setenv("GEOGRID_MAP_PROVIDER", "maptiler")
     monkeypatch.setenv("GEOGRID_MAPTILER_API_KEY", 'key" onload="alert(1)')
 
     html = index().body.decode("utf-8")
@@ -617,6 +622,7 @@ def test_index_injects_maptiler_key_from_environment_safely(monkeypatch):
 
 
 def test_missing_maptiler_key_does_not_fall_back_to_public_osm(browser, monkeypatch):
+    monkeypatch.setenv("GEOGRID_MAP_PROVIDER", "maptiler")
     monkeypatch.delenv("GEOGRID_MAPTILER_API_KEY", raising=False)
     html = index().body.decode("utf-8")
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
@@ -637,7 +643,7 @@ def test_missing_maptiler_key_does_not_fall_back_to_public_osm(browser, monkeypa
         html
         .replace('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">', "")
         .replace('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>', leaflet_stub)
-        .replace('<script src="/static/app.js"></script>', f"<script>{app_js}</script>")
+        .replace('<script defer src="/static/app.js"></script>', f"<script>{app_js}</script>")
     )
     page = browser.new_page()
     page.route("**/api/businesses", lambda route: route.fulfill(status=200, body="[]"))
@@ -826,3 +832,25 @@ def test_malformed_indicator_preferences_default_to_all_enabled(help_page):
 
     for toggle in help_page.locator("[data-indicator-toggle]").all():
         expect(toggle).to_be_checked()
+
+
+def test_basic_mode_hides_advanced_columns_without_removing_them(help_page):
+    contact = help_page.locator("#compTable thead th").nth(2)
+    mode = help_page.locator("#analysisMode")
+
+    mode.select_option("basic")
+    assert contact.evaluate("(cell) => getComputedStyle(cell).display") == "none"
+    mode.select_option("advanced")
+    assert contact.evaluate("(cell) => getComputedStyle(cell).display") != "none"
+
+
+def test_unavailable_map_blocks_manual_print(help_page):
+    help_page.evaluate("""
+        () => {
+          window.print = () => { window.printed = true; };
+          failMap("Falha de cartografia simulada");
+          document.querySelector("#printBtn").click();
+        }
+    """)
+    expect(help_page.locator("#mapTileStatus")).to_have_text("Falha de cartografia simulada")
+    assert help_page.evaluate("window.printed === undefined")

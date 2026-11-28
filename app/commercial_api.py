@@ -523,6 +523,18 @@ async def commercial_admin_login(body: AdminLoginIn, request: Request):
     return response
 
 
+@router.get("/api/commercial/admin/finance")
+def commercial_admin_finance(request: Request):
+    from .live_finance import LiveFinanceError, financial_overview
+
+    _require_secure_admin_request(request)
+    _require_admin_session(request)
+    try:
+        return financial_overview()
+    except LiveFinanceError as error:
+        raise HTTPException(status_code=503, detail="Painel financeiro indisponível") from error
+
+
 @router.get("/api/commercial/admin/session")
 def commercial_admin_session(request: Request):
     return {

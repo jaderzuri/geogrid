@@ -4,15 +4,13 @@ import os
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
+from .config.maps import map_commercial_blocker
+
 
 _REQUIRED_APPROVALS = (
     ("ZURI_COMMERCIAL_DIAGNOSTICS_ENABLED", "commercial_diagnostics_disabled"),
     ("ZURI_DATAFORSEO_COMMERCIAL_USE_APPROVED", "dataforseo_use_not_approved"),
     ("ZURI_GOOGLE_UPSTREAM_USE_APPROVED", "google_upstream_use_not_approved"),
-    (
-        "GEOGRID_MAPTILER_COMMERCIAL_PLAN_CONFIRMED",
-        "maptiler_commercial_plan_unconfirmed",
-    ),
 )
 
 
@@ -24,6 +22,9 @@ def landing_diagnostics_gate() -> dict:
         for variable, blocker in _REQUIRED_APPROVALS
         if os.environ.get(variable, "").strip().lower() not in {"1", "true", "yes", "on"}
     ]
+    map_blocker = map_commercial_blocker()
+    if map_blocker:
+        blockers.append(map_blocker)
     return {"enabled": not blockers, "blockers": blockers}
 
 

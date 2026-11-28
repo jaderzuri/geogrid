@@ -6,6 +6,9 @@ import os
 import re
 from collections import deque
 from typing import Literal, NoReturn
+from uuid import UUID
+
+import psycopg
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -116,6 +119,9 @@ class ExternalScanIn(ExternalInput):
     keyword: str = Field(min_length=2, max_length=200)
 
 
+    manual_claim_token: UUID | None = None
+
+
 class ExternalResultIn(ExternalInput):
     name: str = Field(min_length=1, max_length=200)
     cid: str | None = Field(default=None, max_length=128)
@@ -132,8 +138,8 @@ class ExternalResultIn(ExternalInput):
 
 
 class ExternalPointIn(ExternalInput):
-    row: int = Field(ge=0, le=2)
-    col: int = Field(ge=0, le=2)
+    row: int = Field(ge=0, le=12)
+    col: int = Field(ge=0, le=12)
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     status: Literal["ok", "no_results", "error", "pending"]
@@ -317,6 +323,24 @@ def register_scan(
     """Create one fixed 3x3 / 1 km scan without calling any search provider."""
     client_id = _client_id(client_id)
     language_code = os.environ.get("GEOGRID_EXTERNAL_LANGUAGE_CODE", "pt").strip() or "pt"
+    options = {}
+    if body.manual_claim_token is not None:
+        from .manual_standard import read_worker_claim
+        from .live_finance import LiveFinanceError
+
+        try:
+            request_id = UUID(body.external_request_id)
+            claim = read_worker_claim(request_id, body.manual_claim_token)
+        except (ValueError, LiveFinanceError, psycopg.Error) as error:
+            raise HTTPException(503, "Manual queue claim unavailable") from error
+        if (
+            client_id != "t2s-landing" or not claim or claim["keyword"] != body.keyword
+            or body.external_business_id != f"manual-{claim['manual_business_id']}"
+        ):
+            raise HTTPException(403, "Invalid manual queue claim")
+        options = dict(registered_business_id=claim["manual_business_id"],
+                       grid_size=claim["grid_size"], spacing_km=claim["spacing_km"])
+        language_code = "pt"
     try:
         scan, created = db.create_external_scan(
             client_id,
@@ -324,6 +348,7 @@ def register_scan(
             body.external_business_id,
             body.keyword,
             language_code,
+            **options,
         )
     except (db.ExternalConflictError, db.ExternalScanNotFoundError) as error:
         _raise_external_error(error)
@@ -361,16 +386,27 @@ def read_scan(
     return response
 
 
+@router.get("/scans/{scan_id}/pdf", dependencies=[Depends(require_external_auth)])
+async def basic_scan_pdf(scan_id: UUID, client_id: str = Header(alias="X-GeoGrid-Client-ID")):
+    from .server_reports import basic_pdf
+
+    try:
+        scan = db.get_external_scan(_client_id(client_id), str(scan_id))
+    except db.ExternalScanNotFoundError as error:
+        _raise_external_error(error)
+    return await basic_pdf([scan])
+
+
 @router.post("/scans/{scan_id}/points", dependencies=[Depends(require_external_auth)])
 def receive_points(
     scan_id: str,
     body: ExternalPointsIn,
     client_id: str = Header(alias="X-GeoGrid-Client-ID"),
 ):
-    """Idempotently ingest up to nine per-point DataForSEO outcomes."""
+    """Idempotently ingest up to 169 per-point DataForSEO outcomes."""
     client_id = _client_id(client_id)
-    if not body.points or len(body.points) > 9:
-        raise HTTPException(status_code=422, detail="Submit between one and nine points")
+    if not body.points or len(body.points) > 169:
+        raise HTTPException(status_code=422, detail="Submit between one and 169 points")
     cells = [(point.row, point.col) for point in body.points]
     if len(cells) != len(set(cells)):
         raise HTTPException(status_code=422, detail="A point may appear only once per request")

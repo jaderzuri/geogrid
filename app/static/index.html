@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="manual-scan-url" content="__GEOGRID_MANUAL_SCAN_URL__">
+<meta name="map-provider" content="__GEOGRID_MAP_PROVIDER__">
+<meta name="map-style-url" content="__GEOGRID_MAP_STYLE_URL__">
 <meta name="maptiler-api-key" content="__GEOGRID_MAPTILER_API_KEY__">
 <title>Smart Grid by ZURI</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+__GEOGRID_MAP_DEPENDENCIES__
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/print.css">
 </head>
@@ -17,7 +20,7 @@
     <div class="brand-name">
       <span class="logo" aria-hidden="true">◉</span>
       <span>Smart Grid by ZURI</span>
-      <small>local rank heatmaps</small>
+      <small>posições em mapas de calor</small>
     </div>
     <button id="helpMenuBtn" class="help-menu-button" type="button"
             aria-haspopup="dialog" aria-controls="helpPanel" aria-expanded="false">
@@ -25,30 +28,33 @@
       <span>Indicadores e visualizações</span>
     </button>
   </header>
+  <label>Visualização
+    <select id="analysisMode"><option value="basic">Básico</option><option value="advanced" selected>Avançado</option></select>
+  </label>
 
   <section>
-    <h2>Business</h2>
-    <select id="bizSelect"><option value="">— add a business below —</option></select>
+    <h2>Empresa</h2>
+    <select id="bizSelect"><option value="">— cadastre uma empresa abaixo —</option></select>
     <div id="bizInfo" class="muted small"></div>
     <form id="bizForm" class="row">
-      <input id="bizQuery" placeholder="Google Maps link, or “Name, City”" autocomplete="off">
-      <button type="submit" class="secondary">Add</button>
+      <input id="bizQuery" placeholder="Link do Google Maps ou “Nome, Cidade”" autocomplete="off">
+      <button type="submit" class="secondary">Cadastrar</button>
     </form>
     <div id="bizMsg" class="small"></div>
   </section>
 
   <section>
-    <h2>New scan</h2>
-    <label>Keywords <span class="muted">(one per line)</span>
-      <textarea id="keywords" rows="3" placeholder="plumber&#10;emergency plumber"></textarea>
+    <h2>Nova pesquisa</h2>
+    <label>Palavras-chave <span class="muted">(uma por linha)</span>
+      <textarea id="keywords" rows="3" placeholder="encanador&#10;encanador de emergência"></textarea>
     </label>
     <div class="row">
-      <label>Grid
+      <label>Grade
         <select id="gridSize">
           <option>3</option><option>5</option><option selected>7</option><option>9</option><option>11</option><option>13</option>
         </select>
       </label>
-      <label>Spacing
+      <label>Espaçamento
         <span class="row tight">
           <input id="spacing" type="number" min="0.1" step="0.1" value="1">
           <select id="unit"><option value="km">km</option><option value="mi">mi</option></select>
@@ -56,15 +62,16 @@
       </label>
     </div>
     <div id="gridHint" class="muted small"></div>
-    <div class="small muted">Drag the <b>blue center pin</b> to move the grid. <a href="#" id="previewGrid">Preview grid</a> · <a href="#" id="resetCenter">Reset to business</a></div>
-    <button id="runBtn" class="primary" disabled>Run scan</button>
+    <div class="small muted">Arraste o <b>marcador azul</b> para mover a grade. <a href="#" id="previewGrid">Prévia da grade</a> · <a href="#" id="resetCenter">Centralizar na empresa</a></div>
+    <button id="runBtn" class="primary" disabled>Executar pesquisa</button>
+    <a href="/api/commercial/admin">Standard Normal e Priority · pesquisas em lote</a>
     <div id="runMsg" class="small"></div>
     <a id="liveLogin" href="/api/commercial/admin" target="_blank" rel="noopener" hidden>Entrar como operador</a>
   </section>
 
   <section class="grow">
-    <h2>History</h2>
-    <ul id="history" class="history"><li class="muted small">No scans yet.</li></ul>
+    <h2>Histórico</h2>
+    <ul id="history" class="history"><li class="muted small">Nenhuma pesquisa.</li></ul>
   </section>
 </aside>
 
@@ -210,7 +217,7 @@
   __ZURI_PRINT_INTRO__
   <div id="map"></div>
   <div id="mapTileStatus" class="map-tile-status hidden" role="status">
-    Configure GEOGRID_MAPTILER_API_KEY no ambiente para carregar o mapa.
+    Carregando mapa…
   </div>
 
   <div id="scanCard" class="card hidden">
@@ -220,6 +227,10 @@
         <div id="scanSub" class="muted small"></div>
       </div>
       <div class="actions">
+        <select id="printOrientation" aria-label="Orientação do PDF">
+          <option value="portrait">A4 vertical</option>
+          <option value="landscape">A4 horizontal</option>
+        </select>
         <button id="printBtn" class="ghost" title="Salvar o relatório como PDF">Salvar PDF</button>
         <button id="deleteBtn" class="ghost danger" title="Excluir esta pesquisa">Excluir</button>
       </div>
@@ -275,6 +286,6 @@
   __ZURI_PRINT_CLOSING__
 </main>
 
-<script src="/static/app.js"></script>
+<script defer src="/static/app.js"></script>
 </body>
 </html>

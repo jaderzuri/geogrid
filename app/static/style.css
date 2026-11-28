@@ -213,3 +213,14 @@ tr.sel td { background: #fef3c7; }
   .indicator-preferences-actions .primary { margin-left: 0; }
 }
 @media print { .help-menu-button, .help-panel { display: none !important; } }
+
+.analysis-basic #compTable { min-width: 0; }
+.analysis-basic #compTable :is(th, td):nth-child(3),
+.analysis-basic #compTable :is(th, td):nth-child(4),
+.analysis-basic .position-summary,
+.analysis-basic .point-positions,
+.analysis-basic #analysisInfo,
+.analysis-basic #viewToggle,
+.analysis-basic #metrics [data-indicator-card]:not([data-indicator-card="arp"], [data-indicator-card="atrp"], [data-indicator-card="solv"], [data-indicator-card="found"]) {
+  display: none;
+}
